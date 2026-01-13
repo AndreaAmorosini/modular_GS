@@ -3,54 +3,61 @@ from pathlib import Path
 import jinja2
 from core.utils import run_command
 from core.context import PipelineContext
+from core.utils import get_or_download_pixi  # Importa il getter
+import subprocess
+import os
 
 
-class CommandRunnerStep:
-    """Esegue uno step leggendo il suo manifest .toml."""
+class MethodRunner:
+    def __init__(self, config: dict, env_path: Path, base_path: Path):
+        self.config = config
+        self.env_path = env_path
+        self.base_path = base_path
+        self.pixi_exe = get_or_download_pixi(base_path)
 
-    def __init__(
-        self, context: PipelineContext, step_config: dict, method_config: dict
-    ):
-        self.context = context
-        self.step_config = step_config  # Config da pipeline.toml
-        self.method_config = method_config  # Config da method.toml
-        self.name = self.method_config["name"]
-        self.logger = logging.getLogger(self.name)
-        self.verbose = context.get("verbose", False)
-        self.jinja_env = jinja2.Environment(loader=jinja2.BaseLoader())
+    def run(self, context):
+        """
+        Esegue il comando del metodo dentro l'ambiente Pixi.
+        """
+        print(f"--- Running Method: {self.config.get('title')} ---")
 
-        # Prende la root del progetto dal context (iniettata da main.py)
-        self.project_root = Path(self.context.get("project_root", "."))
+        # 1. Prepara il comando usando Jinja (logica esistente nel tuo codice)
+        # Assumiamo che self.config["execution"]["command"] sia es:
+        # "ns-train splatfacto --data {data_dir}"
+        raw_cmd = self.config["execution"]["command"]
 
-    def run(self):
+        # (Qui inserisci la tua logica di risoluzione template Jinja/format)
+        # Esempio semplificato:
+        cmd_str = raw_cmd.format(
+            data_dir=context.get_data_dir(),
+            output_dir=context.get_output_dir(),
+            # ... altri parametri
+        )
+
+        print(f"Command payload: {cmd_str}")
+
+        # 2. Costruisci il comando Pixi
+        # "pixi run" esegue il comando nel contesto dell'ambiente
+        full_cmd = [
+            str(self.pixi_exe),
+            "run",
+            # Possiamo passare comandi shell arbitrari
+            "bash",
+            "-c",
+            cmd_str,
+        ]
+
+        # 3. Esegui
         try:
-            template_vars = self._prepare_template_vars()
-            command_template = self.method_config["execution"]["command"]
-            rendered_command = self._render_template(command_template, template_vars)
-
-            final_command_to_run = rendered_command
-            env_path = template_vars.get("env_path")
-            
-            if env_path:
-                self.logger.info(f"Esecuzione all'interno dell'ambiente Conda: {env_path}")
-                # Usiamo bash -c per gestire correttamente comandi multi-riga e quoting
-                # Sostituiamo i doppi apici nel comando con singoli per evitare conflitti
-                escaped_command = rendered_command.replace('"', "'")
-                final_command_to_run = f'conda run --prefix "{env_path}" --no-capture-output bash -c "{escaped_command}"'
-
-            self.logger.info(f"Avvio esecuzione per {self.name}...")
-            run_command(
-                final_command_to_run, # Usa il comando finale, non quello originale
-                log_name=self.logger.name,
-                verbose=self.verbose,
-                shell=True,
+            subprocess.check_call(
+                full_cmd,
+                cwd=self.env_path,  # Importante: Pixi cerca pixi.toml qui
+                env=os.environ,
             )
-
-            self._check_and_register_outputs(template_vars)
-        except Exception as e:
-            self.logger.error(f"Esecuzione fallita: {e}", exc_info=self.verbose)
-            raise
-
+        except subprocess.CalledProcessError as e:
+            print(f"Execution failed with error: {e}")
+            raise e
+        
     def _render_template(self, template_str: str, vars: dict) -> str:
         template = self.jinja_env.from_string(template_str)
         return template.render(vars)
@@ -129,33 +136,6 @@ class CommandRunnerStep:
 
         return vars
     
-    # def _check_and_register_outputs(self, template_vars: dict):
-    #     """Verifica e salva l'output primario nel context."""
-    #     self.logger.info("Verifica degli output...")
-    #     primary_output_name = self.method_config["execution"].get("primary_output")
-    #     if not primary_output_name:
-    #         self.logger.debug("Nessun 'primary_output' definito. Step completato.")
-    #         return
-
-    #     output_key_in_context = self.method_config["execution"]["outputs"].get(primary_output_name)
-    #     if not output_key_in_context:
-    #         self.logger.warning(
-    #             f"'output_key' non specificato. L'output non sarà passato."
-    #         )
-    #         return
-
-    #     output_path_str = template_vars["outputs"].get(primary_output_name)
-    #     if not output_path_str:
-    #         raise ValueError(f"primary_output '{primary_output_name}' non trovato.")
-
-    #     output_path = Path(output_path_str)
-    #     if not output_path.exists():
-    #         raise FileNotFoundError(
-    #             f"Output primario atteso non trovato in {output_path}"
-    #         )
-
-    #     self.context.set(output_key_in_context, str(output_path))
-    #     self.logger.info(f"Output salvato in context['{output_key_in_context}']")
 
     def _check_and_register_outputs(self, template_vars: dict):
         """Verifica e salva l'output primario nel context."""

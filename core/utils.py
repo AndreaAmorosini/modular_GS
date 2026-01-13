@@ -4,12 +4,78 @@ import logging
 import subprocess
 import time
 from typing import List
+import platform
+import urllib.request
+import tarfile
+import zipfile
+import stat
+import os
 
-# Import Rerun se disponibile
 try:
     import rerun as rr
 except ImportError:
     rr = None
+
+
+def get_or_download_pixi(base_dir: Path) -> Path:
+    """
+    Scarica pixi standalone in base_dir/bin/pixi se non esiste.
+    """
+    bin_dir = base_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+
+    exe_name = "pixi.exe" if platform.system() == "Windows" else "pixi"
+    pixi_exe = bin_dir / exe_name
+
+    if pixi_exe.exists():
+        return pixi_exe.resolve()
+
+    print(f"[SYSTEM] Pixi non trovato. Download in corso...")
+
+    system = platform.system().lower()  # linux, darwin, windows
+    machine = platform.machine().lower()  # x86_64, arm64
+
+    # Mappatura URL rilasci ufficiali
+    base_url = "https://github.com/prefix-dev/pixi/releases/latest/download"
+
+    if system == "linux":
+        file_name = "pixi-x86_64-unknown-linux-musl.tar.gz"
+        if "aarch" in machine:
+            file_name = "pixi-aarch64-unknown-linux-musl.tar.gz"
+    elif system == "darwin":  # Mac
+        file_name = "pixi-x86_64-apple-darwin.tar.gz"
+        if "arm" in machine:
+            file_name = "pixi-aarch64-apple-darwin.tar.gz"
+    else:  # Windows
+        file_name = "pixi-x86_64-pc-windows-msvc.zip"
+
+    url = f"{base_url}/{file_name}"
+    archive_path = bin_dir / file_name
+
+    try:
+        print(f"Downloading {url}...")
+        urllib.request.urlretrieve(url, archive_path)
+
+        if file_name.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r") as zip_ref:
+                zip_ref.extractall(bin_dir)
+        else:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=bin_dir)
+
+        # Rendi eseguibile
+        if system != "windows":
+            st = os.stat(pixi_exe)
+            os.chmod(pixi_exe, st.st_mode | stat.S_IEXEC)
+
+        archive_path.unlink()  # Pulizia
+        print(f"[SYSTEM] Pixi pronto: {pixi_exe}")
+
+    except Exception as e:
+        raise RuntimeError(f"Errore download Pixi: {e}")
+
+    return pixi_exe.resolve()
+
 
 
 def setup_logging(level=logging.INFO):

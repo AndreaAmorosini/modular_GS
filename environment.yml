@@ -1,4 +1,4 @@
-name: splat_pipe_v2
+name: modular_GS
 channels:
   - conda-forge
   - defaults
@@ -9,7 +9,9 @@ dependencies:
   
   # Dipendenze della pipeline
   - typer     # Per la CLI
-  - toml      # Per i file .toml
+  - toml
+  - tomli
+  - tomli-w      # Per i file .toml
   - jinja2    # Per il templating dei comandi  
   - rerun-sdk
   - pyyaml

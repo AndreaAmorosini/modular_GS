@@ -1,43 +1,61 @@
-import toml
-import logging
+import tomli
+import os
 from pathlib import Path
+from typing import List, Dict
+from .components.base import MethodRunner  # <--- AGGIORNATO (era CommandRunnerStep)
 from .context import PipelineContext
-from .validation import Validator
-from .components.base import CommandRunnerStep
+from .installer import MethodInstaller
 
 
 class PipelineRunner:
-    """Orchestra l'esecuzione della pipeline."""
+    def __init__(self, pipeline_config_path: str):
+        self.pipeline_path = Path(pipeline_config_path)
+        self.base_path = self.pipeline_path.parent.parent
+        self.context = PipelineContext(self.base_path)
 
-    def __init__(self, config_path: Path, methods_dir: Path, override_args: dict = None):
-        self.config = toml.load(config_path)
-        self.context = PipelineContext(self.config.get("context", {}), override_args=override_args)
-        self.validator = Validator(methods_dir)
+        with open(self.pipeline_path, "rb") as f:
+            self.config = tomli.load(f)
 
-        pipeline_config = self.config.get("pipeline", {})
-        self.step_order = pipeline_config.get("steps", [])
-        self.steps_config = self.config.get("step", {})
-        self.logger = logging.getLogger("PipelineRunner")
-        self.logger.info(f"Pipeline '{pipeline_config.get('name')}' caricata.")
+    def run(self):
+        print(f"Starting pipeline: {self.config.get('title', 'Untitled')}")
 
-    def execute(self):
-        total_steps = len(self.step_order)
-        for i, step_name in enumerate(self.step_order):
-            step_config = self.steps_config.get(step_name)
-            method_name = step_config.get("method")
-            self.logger.info(
-                f"\n--- [Step {i + 1}/{total_steps}] Esecuzione: {step_name} (Metodo: {method_name}) ---"
-            )
+        steps = self.config.get("steps", [])
+        for step in steps:
+            self._run_step(step)
 
-            try:
-                _, method_config = self.validator.find_method_manifest(method_name)
-                step_instance = CommandRunnerStep(
-                    self.context, step_config, method_config
-                )
-                step_instance.run()
-            except Exception as e:
-                self.logger.critical(
-                    f"Step '{step_name}' (Metodo '{method_name}') fallito: {e}"
-                )
-                raise
-        self.logger.info("--- Esecuzione pipeline completata. ---")
+    def _run_step(self, step_config: Dict):
+        step_name = step_config.get("name")
+        method_path = self.base_path / step_config.get("method")
+
+        print(f"\n--- Step: {step_name} ---")
+
+        if not method_path.exists():
+            raise FileNotFoundError(f"Method file not found: {method_path}")
+
+        with open(method_path, "rb") as f:
+            method_config = tomli.load(f)
+
+        # Configura output directory per lo step
+        # Se lo step definisce output_dir nel TOML della pipeline, usalo
+        # Altrimenti usa defaults
+        if "output_dir" in step_config:
+            self.context.set_output_dir(step_config["output_dir"])
+
+        # 1. Installazione (Dichiarativa via Pixi)
+        # Usa env_path basato sul nome del metodo per evitare duplicati
+        method_name = method_config.get("title", "unknown").replace(" ", "_").lower()
+        env_path = self.base_path / "envs" / method_name
+
+        installer = MethodInstaller(method_config, self.base_path)
+        if not installer.is_installed(env_path):
+            installer.install(env_path)
+
+        # 2. Esecuzione
+        # Uniamo la config della pipeline con quella del metodo
+        # Le variabili definite nello step della pipeline (es. output_dir) sovrascrivono i default
+        runner = MethodRunner(method_config, env_path, self.base_path)
+
+        # Passiamo i parametri specifici dello step al context/runner se necessario
+        # (Qui potresti estendere context per accettare override temporanei)
+
+        runner.run(self.context)
