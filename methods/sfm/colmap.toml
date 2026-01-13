@@ -1,0 +1,44 @@
+name = "colmap"
+step_type = "sfm"
+description = "Esegue la pipeline SfM completa di COLMAP."
+
+[installation]
+conda_env_name = "colmap_env"
+conda_channels = ["pytorch", "nvidia", "conda-forge"]
+conda_packages = [
+    "colmap"
+]
+
+[execution]
+# Questo comando orchestra i vari step di COLMAP.
+command = """
+colmap feature_extractor \
+    --database_path "{{ step_output_dir }}/database.db" \
+    --image_path "{{ inputs.image_dir }}" \
+    --ImageReader.single_camera 1 \
+    --SiftExtraction.use_gpu 1
+
+colmap exhaustive_matcher \
+    --database_path "{{ step_output_dir }}/database.db" \
+    --SiftMatching.use_gpu 1
+
+mkdir -p "{{ outputs.sparse_model }}"
+
+colmap mapper \
+    --database_path "{{ step_output_dir }}/database.db" \
+    --image_path "{{ inputs.image_dir }}" \
+    --output_path "{{ outputs.sparse_model }}"
+"""
+
+[execution.inputs]
+# Richiede la directory di immagini prodotta dallo step precedente.
+image_dir = "string"
+
+[execution.outputs]
+# L'output è la directory contenente il modello sparso (cameras.bin, images.bin, points3D.bin).\
+sparse_model_dir = "{{ step_output_dir }}/sparse/0"
+colmap_model_dir = "{{ step_output_dir }}"
+primary_output = "colmap_model_dir"
+
+[validation]
+validation_command = "colmap -h"

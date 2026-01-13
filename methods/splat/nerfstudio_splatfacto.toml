@@ -1,0 +1,169 @@
+name = "nerfstudio_commands"
+step_type = "nerf" # Questo può essere usato per più step (process, train, export)
+description = "Wrapper per nerfstudio_commands.py (process, train, export)."
+
+[installation]
+# Crea un ambiente locale isolato per Nerfstudio e le sue dipendenze
+conda_env_name = "nerfstudio_env"
+conda_channels = ["pytorch", "nvidia", "conda-forge", "defaults"]
+conda_packages = [
+    "python=3.10",
+    "pip",
+    "cuda-toolkit=11.8",  # Meta-pacchetto che installa sia cudatoolkit che cudatoolkit-dev
+    "nvidia/label/cuda-11.8.0::cuda-nvcc",
+    "ffmpeg",
+    "colmap",
+]
+
+# Installa Pytorch, tcnn, gsplat, nerfstudio, ecc.
+pip_packages = [
+    "torch==2.1.2+cu118 torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118", # Dal Dockerfile
+    "ninja",
+]
+
+post_install_commands = [
+    "pip install nerfstudio",
+    "ns-install-cli",
+]
+
+
+# Questa sezione compila i pacchetti C++/CUDA in .whl isolati.
+[installation.docker_builder]
+enabled = true
+
+# Immagine Docker da usare per la build (Ubuntu 22.04, Cuda 11.8)
+# È fondamentale che sia compatibile con l'host (stessa glibc/cuda)
+image = "nvidia/cuda:11.8.0-devel-ubuntu22.04"
+
+# Comandi da eseguire nel container *prima* di compilare i wheel.
+# Installiamo le dipendenze di build: python, pip, ninja, git, e torch.
+setup_commands = [
+    "apt-get update && apt-get install -y python3.10 python3-pip ninja-build git",
+    "pip install torch==2.1.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118"
+]
+
+# Pacchetti da compilare. L'installer.py li copierà e compilerà in /tmp
+build_pip_packages = [
+    "git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch",
+    "git+https://github.com/nerfstudio-project/gsplat.git"
+]
+
+
+[execution]
+# Questo comando usa Jinja2 per cambiare modalità
+# in base a 'config.mode' passato dalla pipeline.toml
+command = """
+{% if config.mode == 'frame_extraction' %}
+    ns-process-data video \
+    --data "{{inputs.video_path}}" \
+    --output-dir "{{outputs.image_dir}}" \
+    --num-frames-target {{config.frame_count | default(300)}} \
+    --gpu \
+    --skip-colmap \
+    --num-downscales 0
+
+{% elif config.mode == 'train_export' %}    
+    echo "Starting Data Processing..."
+    ns-process-data images \
+    --data "{{inputs.image_dir}}" \
+    --output-dir "{{outputs.model_dir}}" \
+    --gpu \
+    {% if config.skip_colmap %}
+        --skip-colmap \
+        --colmap-model-path "{{inputs.colmap_dir}}" \
+    {% endif %}
+    --verbose
+
+    echo "Starting Training..."
+    ns-train {{config.model | default('splatfacto')}} \
+    --data "{{outputs.model_dir}}" \
+    --output-dir "{{outputs.model_dir}}/export" \
+    --viewer.quit-on-train-completion True \
+    --pipeline.datamanager.cache-images cpu \
+    --max-num-iterations {{config.max_iterations | default(30000)}} \
+    --downscale-factor {{config.num_downscales | default(8)}} \
+    --center-method none \
+    {% if config.dataparser_scale %}
+        --pipeline.datamanager.dataparser.scale_factor {{config.dataparser_scale}} \
+    {% endif %}
+    {% if config.advanced %}
+        --pipeline.model.cull-alpha-thresh 0.005 \
+        --pipeline.model.use-scale-regularization True \
+        --pipeline.model.use-bilateral-grid True \
+        --pipeline.datamanager.train-cameras-sampling-strategy fps \
+        --pipeline.model.camera-optimizer.mode SO3xR3 \
+        --pipeline.model.cull-scale-thresh 0.5 \
+        --pipeline.model.densify-grad-thresh 0.0008 \
+        --pipeline.model.densify-size-thresh 0.01 \
+        {% if config.model != 'splatfacto-w-light' %}
+            --pipeline.model.sh-degree 3 \
+        {% endif %}
+    {% endif %}
+    {% if config.use_mcmc and (config.model == 'splatfacto' or config.model == 'splatfacto-big') %}
+        --pipeline.model.strategy mcmc \
+        --pipeline.model.noise-lr 500000.0 \
+        --pipeline.model.mcmc-opacity-reg 0.01 \
+        --pipeline.model.mcmc-scale-reg 0.01 \
+    {% endif %}
+    nerfstudio-data
+
+    echo "Searching for config..."
+    CONFIG_FILE=$(find "{{outputs.model_dir}}/export" -name "config.yml" | sort | tail -n 1)
+
+    if [ -z "$CONFIG_FILE" ]; then 
+        echo "Error: config.yml not found in {{outputs.model_dir}}/export"
+        exit 1
+    fi
+    
+    echo "Exporting using config: $CONFIG_FILE"
+    
+    ns-export gaussian-splat \
+    --load-config $CONFIG_FILE \
+    --output-dir "{{outputs.model_dir}}/splat" \
+    --obb-center 0 0 0 \
+    --obb-rotation 0 0 0
+
+    echo ".ply exported to {{outputs.model_dir}}/splat"
+
+{% else %}
+    echo "Error: 'config.mode' non specificato" && exit 1
+{% endif %}
+"""
+
+# conda run --prefix {{env_path}} python scripts/nerfstudio_commands.py \
+# {% if config.mode == 'frame_extraction' %}
+#     --frame-extraction \
+#     --data-path "{{inputs.video_path}}" \
+#     --output-dir "{{outputs.image_dir}}" \
+#     --frame-count "{{config.frame_count | default(300)}}" \
+# {% elif config.mode == 'train_export' %}
+#     --data-path "{{inputs.image_dir}}" \
+#     --output-dir "{{outputs.model_dir}}" \
+#     --model "{{config.model | default('splatfacto')}}" \
+#     --max-num-iterations "{{config.max_iterations | default(30000)}}" \
+#     --num-downscales "{{config.num_downscales | default(8)}}" \
+#     {% if config.use_mcmc %}--use-mcmc{% endif %} \
+#     {% if config.advanced %}--advanced{% endif %} \
+#     {% if config.skip_colmap %}
+#         --skip-colmap \
+#         --colmap-model-path "{{inputs.colmap_dir}}"
+#     {% endif %}
+# {% else %}
+#     echo "Errore: 'config.mode' non specificato per nerfstudio-commands"
+# {% endif %}
+
+
+# Definiamo TUTTI gli input e output possibili
+[execution.inputs]
+video_path = "string"   # Per mode='frame_extraction'
+image_dir = "string"    # Per mode='train_export'
+colmap_dir = "string"   # Per mode='train_export' (opzionale)
+
+[execution.outputs]
+image_dir = "{{step_output_dir}}"            # Per mode='frame_extraction'
+model_dir = "{{step_output_dir}}"            # Per mode='train_export'
+final_ply = "{{step_output_dir}}/splat/splat.ply" # Prodotto da 'train_export'
+# 'primary_output' dipende dalla modalità, lo gestiamo nella pipeline.toml
+
+[validation]
+validation_command = "python -c 'import nerfstudio; import tinycudann; import gsplat; print(\"Nerfstudio Env OK\")'"

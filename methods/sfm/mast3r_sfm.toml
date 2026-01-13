@@ -1,0 +1,80 @@
+# Nome: mast3r_sfm
+# Tipo: Structure from Motion
+# Descrizione: Esegue SfM usando MASt3R per il matching e GloMap per la ricostruzione.
+name = "mast3r_sfm"
+step_type = "sfm"
+description = "Esegue SfM usando MASt3R per il matching e GloMap per la ricostruzione."
+
+[installation]
+# Definiamo un ambiente Conda isolato per MASt3R e le sue dipendenze.
+conda_env_name = "mast3r_sfm_env"
+conda_channels = ["pytorch", "nvidia", "conda-forge"]
+
+# Pacchetti Conda necessari per la compilazione e l'esecuzione.
+# Includiamo colmap e glomap per renderlo autocontenuto.
+conda_packages = [
+    "python=3.10",
+    "pytorch-cuda=11.8",
+    "cython",
+    "numpy=1.26.4",
+    "pytorch::faiss-gpu",
+    "pycolmap==0.6.1",
+    "pyceres==2.1",
+    "colmap",
+    "glomap"
+]
+
+# Cloniamo il repository di MASt3R (ramo 'mast3r_sfm') nella directory vendor.
+git_repos = [
+    { url = "https://github.com/naver/mast3r.git", branch = "mast3r_sfm", path = "mast3r", recursive = true }
+]
+
+# Installiamo le dipendenze Python dai file requirements.txt del repository.æ
+pip_packages = [
+    "-r {{method_vendor_dir}}/mast3r/requirements.txt",
+    "-r {{method_vendor_dir}}/mast3r/dust3r/requirements.txt",
+    "pyaml",
+    "kapture",
+    "kapture-localization",
+    "numpy<2.0.0",
+
+]
+
+# Comandi per compilare le estensioni C++/Cython necessarie (come asmk).
+build_commands = [
+    "git clone https://github.com/jenicek/asmk {{method_vendor_dir}}/mast3r/asmk",
+    "python -m cython {{method_vendor_dir}}/mast3r/asmk/cython/*.pyx",
+    "pip install {{method_vendor_dir}}/mast3r/asmk --no-build-isolation"
+]
+
+post_install_commands = [
+    "cp {{project_root}}/full_pipe_v2/helper_scripts/mast3r_glomap_cli.py {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py"
+]
+
+[execution]
+# Il comando esegue lo script originale 'mast3r_glomap_cli.py',
+# che ora si trova nella directory vendor.
+# Passiamo gli argomenti usando le variabili Jinja2.
+command = """
+python {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py \
+    --model_name "MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric" \
+    --input_files "{{ inputs.image_dir }}" \
+    --output_dir "{{ step_output_dir }}" \
+    --scenegraph_type "{{ config.scenegraph_type | default('swin') }}" \
+    --winsize "{{ config.winsize | default(20) }}" \
+    {% if config.get('win_cyclic', true) %}--win_cyclic{% endif %} \
+    {% if config.get('shared_intrinsics', true) %}--shared_intrinsics{% endif %}
+"""
+
+[execution.inputs]
+# Questo metodo richiede una directory di immagini come input.
+image_dir = "string"
+
+[execution.outputs]
+# L'output primario è la directory contenente il modello sparso di COLMAP/GloMap.
+sparse_model = "{{ step_output_dir }}/colmap/sparse/0"
+primary_output = "sparse_model"
+
+[validation]
+# Comando per verificare che l'ambiente sia stato creato correttamente.
+validation_command = "python -c 'import torch; import pycolmap; print(\"MASt3R-SfM Env OK\")'"

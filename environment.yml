@@ -1,0 +1,15 @@
+name: splat_pipe_v2
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+  
+  # Dipendenze della pipeline
+  - typer     # Per la CLI
+  - toml      # Per i file .toml
+  - jinja2    # Per il templating dei comandi  
+  - rerun-sdk
+  - pyyaml

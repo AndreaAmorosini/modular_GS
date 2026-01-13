@@ -1,0 +1,41 @@
+# Nome descrittivo per la pipeline
+name = "Classic Video to Splat Pipeline"
+description = "Pipeline completa da video a Gaussian Splat, usando sharp-frame-extractor, COLMAP e l'implementazione originale di Graph-INRIA."
+
+# Definisce gli step in ordine di esecuzione.
+# L'orchestratore eseguirà questi step in sequenza.
+[[steps]]
+# Nome mnemonico per questo step
+name = "frame_extraction"
+# Riferimento al file del metodo: methods/preprocess/sharp_frame_extractor.toml
+method = "preprocess/sharp_frame_extractor" 
+# Parametri specifici che verranno passati alla sezione [config] del metodo.
+config = { frame_count = 300 }
+# Definisce gli input che questo step richiede.
+# "{{ context.video_path }}" sarà fornito dalla CLI al momento dell'avvio.
+inputs = { video_path = "{{ context.video_path }}" }
+# La chiave con cui l'output primario di questo step verrà salvato nel contesto.
+output_key = "image_dir"
+
+[[steps]]
+name = "structure_from_motion"
+# Riferimento al file del metodo: methods/sfm/colmap.toml
+method = "sfm/colmap"
+# Questo step non ha configurazioni specifiche, quindi la sezione è vuota.
+config = {}
+# Prende come input la directory delle immagini prodotta dallo step precedente.
+inputs = { image_dir = "{{ context.image_dir }}" }
+# Salva il path alla directory del modello COLMAP nel contesto.
+# NOTA: Salviamo la directory genitore di 'sparse/0', come richiesto dallo step successivo.
+output_key = "colmap_model_dir"
+
+[[steps]]
+name = "gaussian_splatting_training"
+# Riferimento al file del metodo: methods/splat/splat_graphdeco.toml
+method = "splat/splat_graphdeco"
+# Parametri di training per il modello.
+config = { iterations = 30000 }
+# Prende come input la directory del modello COLMAP dallo step precedente.
+inputs = { colmap_model_dir = "{{ context.colmap_model_dir }}" }
+# Salva il path al file .ply finale nel contesto.
+output_key = "final_ply"
