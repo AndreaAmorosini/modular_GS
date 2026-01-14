@@ -159,8 +159,13 @@ jobs:
             path: dist
             merge-multiple: true
 
+        - name: Setup Python
+          uses: actions/setup-python@v4
+          with:
+            python-version: "3.10"
+
         - name: Install Hugging Face CLI
-          run: pip install huggingface_hub
+          run: pip install huggingface_hub[cli]
 
         - name: Upload to Hugging Face
           env:
@@ -168,8 +173,10 @@ jobs:
           run: |
             # Sostituisci TUO_UTENTE/TUO_DATASET
             export HF_REPO_ID="AterMors/gs_wheels" 
+
+            hf login --token $HF_TOKEN --add-to-git-credential
             
             echo "Caricamento wheels su $HF_REPO_ID..."
             
             # Carica tutti i file .whl nella root del repo HF
-            huggingface-cli upload $HF_REPO_ID dist/ . --repo-type dataset --token $HF_TOKEN
+            hf upload $HF_REPO_ID dist/ . --repo-type dataset
