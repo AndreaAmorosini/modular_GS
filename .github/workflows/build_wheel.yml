@@ -61,9 +61,10 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.14
+        uses: Jimver/cuda-toolkit@v0.2.19
         with:
           cuda: ${{ matrix.cuda }}
+          method: "network"
 
       - name: Install Build Dependencies
         run: |
