@@ -69,6 +69,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           pip install --upgrade pip setuptools wheel ninja
+          pip install "numpy<2.0"
           # Installiamo PyTorch specifico per la versione CUDA target
           # Questo assicura che il linking C++ sia corretto
           pip install torch==${{ matrix.pytorch }} torchvision --index-url https://download.pytorch.org/whl/cu${{ matrix.cuda_clean }}
@@ -81,14 +82,13 @@ jobs:
       # 1. Diff-Gaussian-Rasterization
       # ==========================================
       - name: Build diff-gaussian-rasterization
+        env:
+          TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
         run: |
           git clone --recursive https://github.com/graphdeco-inria/diff-gaussian-rasterization
           cd diff-gaussian-rasterization
-          # Compila
           pip wheel . --no-deps --no-build-isolation -w ../dist_temp
           cd ..
-          # Rinomina per includere CUDA version nel nome file per evitare conflitti nella release
-          # Es: pacchetto-cp310-linux.whl -> pacchetto-cp310-linux+cu118.whl
           for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
           rm -rf dist_temp
 
@@ -96,6 +96,8 @@ jobs:
       # 2. Simple-KNN
       # ==========================================
       - name: Build simple-knn
+        env:
+          TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
         run: |
           git clone --recursive https://github.com/camenduru/simple-knn
           cd simple-knn
@@ -108,6 +110,8 @@ jobs:
       # 3. Gsplat (Nerfstudio)
       # ==========================================
       - name: Build gsplat
+        env:
+          TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
         run: |
           git clone --recursive https://github.com/nerfstudio-project/gsplat
           cd gsplat
@@ -120,6 +124,8 @@ jobs:
       # 4. Tiny-CUDA-NN (Richiede molta RAM/Tempo)
       # ==========================================
       - name: Build tiny-cuda-nn
+        env:
+          TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
         run: |
           git clone --recursive https://github.com/NVlabs/tiny-cuda-nn
           cd tiny-cuda-nn/bindings/torch
