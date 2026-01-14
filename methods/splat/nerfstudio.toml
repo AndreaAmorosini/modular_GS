@@ -2,36 +2,23 @@ title = "Nerfstudio"
 
 [environment]
 python_version = "3.10"
+cuda = "11.8"
 
 [installation]
 channels = ["pytorch", "nvidia", "conda-forge"]
+
+wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
 
 dependencies = [
     # PyTorch con CUDA
     "pytorch=2.1.2",
     "torchvision=0.16.2",
-    "pytorch-cuda=11.8",
-    
-    # CUDA toolkit completo
-    "cuda-toolkit=11.8",
-    "cuda-nvcc=11.8",
-    "cuda-cudart-dev=11.8",
-    
-    # Compilatori compatibili con CUDA 11.8 (max GCC 11)
-    "gcc=11",
-    "gxx=11",
-    "ninja",
-    
-    # NumPy < 2 per compatibilità PyTorch 2.1.x
-    "numpy<2",
 ]
 
 pip_dependencies = [
     "nerfstudio",
     "plyfile",
     "tqdm",
+    "@wheel:diff-gaussian-rasterization",
+    "@wheel:tinycudann",
 ]
-
-[installation.build]
-url = "git+https://github.com/graphdeco-inria/diff-gaussian-rasterization.git"
-flags = "--no-build-isolation -v"

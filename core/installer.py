@@ -1,10 +1,14 @@
 import os
-import shutil
 import subprocess
 import tomli_w
+import shlex
+import shutil
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 from core.utils import get_or_download_pixi
+import urllib.request
+import re
+import json
 
 
 class MethodInstaller:
@@ -13,134 +17,265 @@ class MethodInstaller:
         self.base_path = base_path
         self.pixi_exe = get_or_download_pixi(self.base_path)
 
+        # Percorsi chiave per i template
+        self.vendor_dir = self.base_path / "vendor"
+        self.project_root = self.base_path
+
     def install(self, env_path: Path):
         env_path.mkdir(parents=True, exist_ok=True)
+
+        # --- CACHING CHECK ---
+        # Se esiste questo file, assumiamo che l'installazione sia completa.
+        sentinel_file = env_path / ".install_complete"
+        if sentinel_file.exists():
+            print(
+                f"--- Environment in {env_path.name} is already installed. Skipping setup. ---"
+            )
+            return
+
         print(f"--- Configuring Environment in {env_path} ---")
 
+        # 1. Genera e Scrivi pixi.toml
+        pixi_data = self._generate_pixi_structure()
+        toml_path = env_path / "pixi.toml"
+        with open(toml_path, "wb") as f:
+            tomli_w.dump(pixi_data, f)
+        print(f"Configuration generated at {toml_path}")
+
+        # 2. Pixi Install (Dipendenze binarie e Python base)
+        print("--- Running Pixi Install ---")
         try:
-            # 1. Genera pixi.toml
-            pixi_data = self._generate_pixi_structure()
-
-            toml_path = env_path / "pixi.toml"
-            with open(toml_path, "wb") as f:
-                tomli_w.dump(pixi_data, f)
-
-            print(f"Configuration generated at {toml_path}")
-
-            # 2. Pixi Install (Ambiente Base)
-            print("--- Running Pixi Install ---")
             subprocess.check_call(
                 [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
             )
-
-            # 3. Esegui Task di Post-Installazione (se definiti)
-            for task_name in pixi_data.get("tasks", {}):
-                print(f"--- Running Task: {task_name} ---")
-                subprocess.check_call(
-                    [str(self.pixi_exe), "run", task_name],
-                    cwd=env_path,
-                    env=os.environ,
-                )
-
-            print("--- Installation Complete ---")
-
-        except subprocess.CalledProcessError as e:
-            print(f"!!! Installation Failed !!!")
-            print(f"Error: {e}")
-            self._cleanup_failed_env(env_path)
+        except subprocess.CalledProcessError:
+            print("!!! Installation Failed !!!")
             raise
 
-        except Exception as e:
-            print(f"!!! Unexpected Error During Installation !!!")
-            print(f"Error: {e}")
-            self._cleanup_failed_env(env_path)
-            raise
+        # 3. Gestione Git Repositories (Scarica sorgenti in vendor/)
+        self._clone_repositories()
 
-    def _cleanup_failed_env(self, env_path: Path):
-        """Rimuove l'ambiente in caso di installazione fallita."""
-        if env_path.exists():
-            print(f"--- Cleaning up failed environment: {env_path} ---")
-            try:
-                shutil.rmtree(env_path)
-                print("Cleanup complete.")
-            except Exception as cleanup_error:
-                print(f"Warning: Could not fully clean up: {cleanup_error}")
-                print(f"You may need to manually delete: {env_path}")
+        # 4. Build Commands (Compilazioni e installazioni complesse dentro l'env)
+        build_cmds = self.config.get("installation", {}).get("build_commands", [])
+        if build_cmds:
+            print("--- Running Build Commands ---")
+            self._run_env_commands(build_cmds, env_path)
+
+        # 5. Post Install Commands (Setup finali)
+        post_cmds = self.config.get("installation", {}).get("post_install_commands", [])
+        if post_cmds:
+            print("--- Running Post-Install Commands ---")
+            self._run_env_commands(post_cmds, env_path)
+
+        # Segna l'installazione come completata con successo
+        sentinel_file.touch()
+        print("--- Installation Complete ---")
 
     def _generate_pixi_structure(self) -> Dict:
         install_cfg = self.config.get("installation", {})
         env_cfg = self.config.get("environment", {})
 
-        default_channels = ["pytorch", "nvidia", "conda-forge"]
+        # Setup Versioni
+        cuda_ver_raw = env_cfg.get("cuda", "11.8")
+        cuda_clean = cuda_ver_raw.replace(".", "")
+        cuda_folder = f"cu{cuda_clean}"
 
+        py_ver_raw = env_cfg.get("python_version", "3.10")
+        py_tag = "cp" + py_ver_raw.replace(".", "")
+        platform_tag = "linux_x86_64"
+
+        # Struttura Base Pixi
         pixi = {
             "project": {
                 "name": self.config.get("title", "module").replace(" ", "_").lower(),
                 "version": "0.1.0",
-                "channels": install_cfg.get("channels", default_channels),
+                "channels": install_cfg.get(
+                    "channels", ["pytorch", "nvidia", "conda-forge"]
+                ),
                 "platforms": ["linux-64"],
             },
-            "dependencies": {
-                "python": self._format_ver(env_cfg.get("python_version", "3.10")),
-                "pip": "*",
-            },
+            "dependencies": {"python": self._format_ver(py_ver_raw), "pip": "*"},
             "pypi-dependencies": {},
-            "tasks": {},
             "system-requirements": {"linux": "5.4"},
         }
 
-        # Dipendenze Conda - passthrough dal TOML
+        # Dipendenze Conda
         for dep in install_cfg.get("dependencies", []):
-            name, version = self._parse_dep(dep)
-            pixi["dependencies"][name] = self._format_ver(version)
+            n, v = self._parse_dep(dep)
+            pixi["dependencies"][n] = self._format_ver(v)
 
-        # Dipendenze PyPI
+        pixi["dependencies"].update(
+            {
+                "cuda-toolkit": f"{cuda_ver_raw}.*",
+                "pytorch-cuda": f"{cuda_ver_raw}.*",
+            }
+        )
+
+        # Dipendenze PIP e Wheels Remoti
+        base_wheel_url = install_cfg.get("wheels_base_url")
+        available_wheels = []
+
+        if base_wheel_url:
+            print(f"Checking wheels in {base_wheel_url}/{cuda_folder}...")
+            available_wheels = self._fetch_remote_file_list(
+                base_wheel_url, subdir=cuda_folder
+            )
+
         for dep in install_cfg.get("pip_dependencies", []):
-            name, version = self._parse_pypi_dep(dep)
-            pixi["pypi-dependencies"][name] = self._format_ver(version, is_pypi=True)
+            if dep.startswith("@wheel:"):
+                pkg_name = dep.replace("@wheel:", "").strip()
+                if not base_wheel_url:
+                    raise ValueError(
+                        f"Dependency {dep} needs 'wheels_base_url' in TOML."
+                    )
 
-        # Build da sorgente (opzionale)
-        build_cfg = install_cfg.get("build", {})
-        if build_cfg:
-            url = build_cfg.get("url")
-            if url:
-                flags = build_cfg.get("flags", "--no-build-isolation -v")
-                pixi["tasks"]["install-extensions"] = f"pip install {url} {flags}"
+                safe_pkg = pkg_name.replace("-", "_")
+                found_wheel = self._find_best_match(
+                    safe_pkg, available_wheels, py_tag, platform_tag
+                )
 
-        # Task custom dal TOML
-        for task_name, task_cmd in install_cfg.get("tasks", {}).items():
-            pixi["tasks"][task_name] = task_cmd
+                if found_wheel:
+                    print(f"  -> Found wheel: {found_wheel}")
+                    wheel_filename = found_wheel
+                else:
+                    print(
+                        f"  -> ! Warning: Wheel not found for {pkg_name}, guessing name."
+                    )
+                    wheel_filename = (
+                        f"{safe_pkg}-0.0.0-{py_tag}-{py_tag}-{platform_tag}.whl"
+                    )
+
+                pixi["pypi-dependencies"][pkg_name] = {
+                    "url": f"{base_wheel_url}/{cuda_folder}/{wheel_filename}"
+                }
+            else:
+                n, v = self._parse_pypi_dep(dep)
+                pixi["pypi-dependencies"][n] = self._format_ver(v, True)
 
         return pixi
 
-    def _parse_dep(self, s: str):
-        """Parse: name=version, name<version, name>=version, name"""
-        for sep in [">=", "<=", "!=", "<", ">", "="]:
-            if sep in s:
-                parts = s.split(sep, 1)
-                name = parts[0].strip()
-                ver = parts[1].strip()
-                # Per '=' singolo, è una versione esatta
-                if sep == "=":
-                    return name, ver
-                # Per altri operatori, mantieni l'operatore
-                return name, sep + ver
-        return s.strip(), "*"
+    def _clone_repositories(self):
+        """Clona i repository definiti nel TOML dentro vendor/"""
+        repos = self.config.get("installation", {}).get("git_repos", [])
+        if not repos:
+            return
 
-    def _parse_pypi_dep(self, s: str):
-        """Parse: name==version, name>=version, name"""
-        for sep in ["==", ">=", "<=", "!=", "<", ">"]:
-            if sep in s:
-                parts = s.split(sep, 1)
-                return parts[0].strip(), sep + parts[1].strip()
-        return s.strip(), "*"
+        print("--- Cloning Git Repositories ---")
+        self.vendor_dir.mkdir(parents=True, exist_ok=True)
 
-    def _format_ver(self, v: str, is_pypi: bool = False) -> str:
-        """Formatta versione per pixi.toml."""
-        if not v or v == "*":
-            return "*"
-        # Se ha già operatore, passa così com'è
-        if any(op in v for op in [">=", "<=", "!=", "<", ">"]):
-            return v
-        # Versione esatta
-        return f"=={v}" if is_pypi else f"{v}.*"
+        for repo in repos:
+            url = repo.get("url")
+            branch = repo.get("branch", "main")
+            path_name = repo.get("path", url.split("/")[-1].replace(".git", ""))
+            recursive = repo.get("recursive", False)
+
+            target_path = self.vendor_dir / path_name
+
+            if target_path.exists():
+                print(f"Repo {path_name} exists. Skipping clone.")
+                continue
+
+            print(f"Cloning {url} ({branch}) -> {path_name}...")
+            cmd = ["git", "clone", "-b", branch, url, str(target_path)]
+            if recursive:
+                cmd.append("--recursive")
+
+            subprocess.check_call(cmd)
+
+    def _run_env_commands(self, commands: List[str], env_path: Path):
+        """Esegue comandi shell all'interno dell'ambiente Pixi."""
+        for cmd_template in commands:
+            cmd_str = self._resolve_template(cmd_template)
+            print(f"Running: {cmd_str}")
+
+            # Parsing argomenti (gestisce bene spazi e quote)
+            args = shlex.split(cmd_str, posix=os.name != "nt")
+
+            # Esegue tramite `pixi run` usando il manifest dell'environment
+            full_cmd = [
+                str(self.pixi_exe),
+                "run",
+                "--manifest-path",
+                str(env_path / "pixi.toml"),
+            ] + args
+
+            # Eseguiamo dalla root del progetto per path relativi coerenti
+            try:
+                subprocess.check_call(full_cmd, cwd=self.base_path)
+            except subprocess.CalledProcessError as e:
+                print(f"Command failed: {cmd_str}")
+                raise e
+
+    def _resolve_template(self, text: str) -> str:
+        """Sostituisce placeholder {{...}} con path assoluti (slash normalizzati)."""
+        vendor_str = str(self.vendor_dir).replace("\\", "/")
+        root_str = str(self.project_root).replace("\\", "/")
+
+        text = text.replace("{{method_vendor_dir}}", vendor_str)
+        text = text.replace("{{project_root}}", root_str)
+        return text
+
+    # --- Utilities per ricerca file remoti (Invariate) ---
+    def _fetch_remote_file_list(self, base_url: str, subdir: str) -> List[str]:
+        if "huggingface.co" in base_url:
+            return self._fetch_hf_api_list(base_url, subdir)
+        try:
+            url_to_check = base_url.rstrip("/") + f"/{subdir}"
+            with urllib.request.urlopen(url_to_check, timeout=10) as response:
+                html = response.read().decode("utf-8")
+                files = re.findall(r'href=["\']([^"\']+\.whl)["\']', html)
+                return [os.path.basename(f) for f in files]
+        except Exception:
+            return []
+
+    def _fetch_hf_api_list(self, base_url: str, subdir: str) -> List[str]:
+        try:
+            match = re.search(r"datasets/([^/]+/[^/]+)", base_url)
+            if not match:
+                return []
+            repo_id = match.group(1)
+
+            rev = "main"
+            rev_match = re.search(r"/resolve/([^/]+)", base_url)
+            if rev_match:
+                rev = rev_match.group(1)
+
+            api_url = (
+                f"https://huggingface.co/api/datasets/{repo_id}/tree/{rev}/{subdir}"
+            )
+            with urllib.request.urlopen(api_url, timeout=10) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+            files = [
+                item["path"]
+                for item in data
+                if isinstance(item, dict) and "path" in item
+            ]
+            return [os.path.basename(f) for f in files if f.endswith(".whl")]
+        except Exception:
+            return []
+
+    def _find_best_match(
+        self, pkg_name: str, available_wheels: List[str], py_tag: str, platform_tag: str
+    ) -> Optional[str]:
+        candidates = [
+            f
+            for f in available_wheels
+            if f.startswith(pkg_name)
+            and f.endswith(".whl")
+            and py_tag in f
+            and platform_tag in f
+        ]
+        if not candidates:
+            return None
+        candidates.sort()
+        return candidates[-1]
+
+    def _parse_dep(self, s):
+        return s.split("=", 1) if "=" in s else (s, "*")
+
+    def _parse_pypi_dep(self, s):
+        return s.split("==", 1) if "==" in s else (s, "*")
+
+    def _format_ver(self, v, p=False):
+        return (f"=={v}" if p else f"{v}.*") if v and v != "*" and "<" not in v else v

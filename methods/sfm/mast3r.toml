@@ -1,0 +1,91 @@
+title = "MASt3R_SfM"
+name = "mast3r_sfm"
+description = "Pipeline SfM usando MASt3R per il matching denso e COLMAP/GloMap per la ricostruzione. Ideale per scene 'in the wild'."
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+
+[installation]
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+# URL opzionale se servissero wheel condivisi (es. se volessi aggiungere tinycudann anche qui)
+wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
+
+# Dipendenze installate via Conda (veloci, binarie, sicure)
+dependencies = [
+    "pytorch=2.1.2",
+    "torchvision=0.16.2",
+    "pytorch-cuda=11.8",
+    "numpy=1.26.4",        # Bloccato < 2.0 per compatibilità
+    "colmap",              # Necessario per la ricostruzione geometrica
+    "pycolmap",            # Binding Python per Colmap
+    "cython",              # Necessario per compilare ASMK
+    "git"
+]
+
+# Dipendenze Python pure (Pixi le risolve meglio di pip install manuali)
+pip_dependencies = [
+    "pyaml",
+    "kapture",
+    "kapture-localization", # Usato per output formati standard
+    "albumentations",
+    "einops",
+    "matplotlib",
+    "opencv-python",
+    "scipy",
+    "tqdm",
+    "fire",
+    "ninja"
+]
+
+# Definizione dei Repository da clonare nella cartella 'vendor'
+# Supportato nativamente dal nuovo installer.py
+git_repos = [
+    # Repo principale MASt3R sul branch specifico per SfM
+    { url = "https://github.com/naver/mast3r.git", branch = "mast3r_sfm", path = "mast3r", recursive = true },
+    
+    # ASMK è una dipendenza richiesta per il retrieval nel branch sfm
+    { url = "https://github.com/jenicek/asmk", branch = "main", path = "mast3r/asmk", recursive = false }
+]
+
+# Comandi per costruire le parti che non sono semplici pacchetti pip
+build_commands = [
+    # 1. Compilazione estensione C++ di ASMK
+    "python -m cython {{method_vendor_dir}}/mast3r/asmk/cython/*.pyx",
+    
+    # 2. Installazione ASMK in modalità editable o diretta
+    "pip install {{method_vendor_dir}}/mast3r/asmk --no-build-isolation --no-deps",
+    
+    # 3. Installazione dipendenze residue definite nei repo (fallback di sicurezza)
+    "pip install -r {{method_vendor_dir}}/mast3r/requirements.txt --no-deps",
+    "pip install -r {{method_vendor_dir}}/mast3r/dust3r/requirements.txt --no-deps"
+]
+
+# Setup finale: copiamo lo script CLI custom nella cartella del metodo
+post_install_commands = [
+    "python -c \"import shutil; shutil.copy('{{project_root}}/helper_scripts/mast3r_glomap_cli.py', '{{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py')\""
+]
+
+[execution]
+# Comando di lancio. Usa lo script copiato nel post-install.
+# NOTA: Assicurati che mast3r_glomap_cli.py sia presente in helper_scripts/
+command = """
+python {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py \
+    --input_files "{{ inputs.image_dir }}" \
+    --output_dir "{{ step_output_dir }}" \
+    --scenegraph_type "{{ config.scenegraph_type | default('swin') }}" \
+    --winsize "{{ config.winsize | default(20) }}" \
+    --pixel_tol_2d "{{ config.pixel_tol_2d | default(15) }}" \
+    {% if config.get('shared_intrinsics', true) %}--shared_intrinsics{% endif %}
+"""
+
+[execution.inputs]
+image_dir = "path/to/images"
+
+[execution.outputs]
+sparse_model = "{{ step_output_dir }}/colmap/sparse/0" # Output compatibile con Nerfstudio/Gsplat
+primary_output = "sparse_model"
+
+[validation]
+validation_command = "python -c 'import mast3r; print(\"MASt3R installed successfully\")'"
