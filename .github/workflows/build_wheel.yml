@@ -44,7 +44,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Libera spazio su disco (Cruciale per build multiple CUDA)
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -70,13 +69,11 @@ jobs:
         run: |
           pip install --upgrade pip setuptools wheel ninja
           pip install "numpy<2.0"
-          # Installiamo PyTorch specifico per la versione CUDA target
-          # Questo assicura che il linking C++ sia corretto
           pip install torch==${{ matrix.pytorch }} torchvision --index-url https://download.pytorch.org/whl/cu${{ matrix.cuda_clean }}
 
-      # Crea directory output
+      # Crea directory output strutturata
       - name: Create Dist Dir
-        run: mkdir -p dist_final
+        run: mkdir -p dist_final/cu${{ matrix.cuda_clean }}
 
       # ==========================================
       # 1. Diff-Gaussian-Rasterization
@@ -89,7 +86,8 @@ jobs:
           cd diff-gaussian-rasterization
           pip wheel . --no-deps --no-build-isolation -w ../dist_temp
           cd ..
-          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          # SPOSTA SENZA RINOMINARE (Mantiene nome standard accettato da Pixi/Pip)
+          mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
           rm -rf dist_temp
 
       # ==========================================
@@ -103,7 +101,7 @@ jobs:
           cd simple-knn
           pip wheel . --no-deps --no-build-isolation -w ../dist_temp
           cd ..
-          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
           rm -rf dist_temp
 
       # ==========================================
@@ -117,7 +115,7 @@ jobs:
           cd gsplat
           pip wheel . --no-deps --no-build-isolation -w ../dist_temp
           cd ..
-          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
           rm -rf dist_temp
 
       # ==========================================
@@ -129,8 +127,6 @@ jobs:
         run: |
           git clone --recursive https://github.com/NVlabs/tiny-cuda-nn
           cd tiny-cuda-nn/bindings/torch
-          # Limitiamo le architetture per non mandare in timeout la GitHub Action
-          # 75=T4(Colab), 80=A100, 86=3090/A10, 89=4090/L4, 90=H100
           export TCNN_CUDA_ARCHITECTURES="75;80;86;89"
           if [[ "${{ matrix.cuda_clean }}" == "12"* ]]; then
              export TCNN_CUDA_ARCHITECTURES="75;80;86;89;90"
@@ -138,15 +134,15 @@ jobs:
           
           pip wheel . --no-deps --no-build-isolation -w ../../../dist_temp
           cd ../../..
-          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
           rm -rf dist_temp
 
-      # Upload Artifacts per debug o release
+      # Upload Artifacts mantenendo la struttura
       - name: Upload Wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-cu${{ matrix.cuda_clean }}-py${{ matrix.python }}
-          path: dist_final/*.whl
+          path: dist_final/
 
   upload_to_huggingface:
       needs: build_wheels
@@ -171,12 +167,9 @@ jobs:
           env:
             HF_TOKEN: ${{ secrets.HF_TOKEN }}
           run: |
-            # Sostituisci TUO_UTENTE/TUO_DATASET
             export HF_REPO_ID="AterMors/gs_wheels" 
-
             hf auth login --token $HF_TOKEN --add-to-git-credential
             
-            echo "Caricamento wheels su $HF_REPO_ID..."
-            
-            # Carica tutti i file .whl nella root del repo HF
+            echo "Caricamento strutturato wheels su $HF_REPO_ID..."
+            # L'upload ricorsivo manterrà le cartelle cu118/, cu121/ create sopra
             hf upload $HF_REPO_ID dist/ . --repo-type dataset
