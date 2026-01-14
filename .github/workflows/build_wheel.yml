@@ -1,0 +1,168 @@
+name: Build Universal GS Wheels
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: ${{ matrix.pkg }} (py${{ matrix.python }}-cu${{ matrix.cuda_clean }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- COMBINAZIONE STABILE (Nerfstudio / Inria Standard) ---
+          - python: "3.10"
+            pytorch: "2.1.2"
+            cuda: "11.8.0"
+            cuda_clean: "118"
+            
+          # --- COMBINAZIONE MODERNA (Gsplat v1.0+ / Newer GS methods) ---
+          - python: "3.10"
+            pytorch: "2.3.1"
+            cuda: "12.1.1"
+            cuda_clean: "121"
+            
+          # --- COMBINAZIONE PYTHON 3.11 (Performance) ---
+          - python: "3.11"
+            pytorch: "2.3.1"
+            cuda: "12.1.1"
+            cuda_clean: "121"
+
+          # --- BLEEDING EDGE (PyTorch 2.4 / CUDA 12.4) ---
+          - python: "3.10"
+            pytorch: "2.4.0"
+            cuda: "12.4.1"
+            cuda_clean: "124"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Libera spazio su disco (Cruciale per build multiple CUDA)
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.14
+        with:
+          cuda: ${{ matrix.cuda }}
+
+      - name: Install Build Dependencies
+        run: |
+          pip install --upgrade pip setuptools wheel ninja
+          # Installiamo PyTorch specifico per la versione CUDA target
+          # Questo assicura che il linking C++ sia corretto
+          pip install torch==${{ matrix.pytorch }} torchvision --index-url https://download.pytorch.org/whl/cu${{ matrix.cuda_clean }}
+
+      # Crea directory output
+      - name: Create Dist Dir
+        run: mkdir -p dist_final
+
+      # ==========================================
+      # 1. Diff-Gaussian-Rasterization
+      # ==========================================
+      - name: Build diff-gaussian-rasterization
+        run: |
+          git clone --recursive https://github.com/graphdeco-inria/diff-gaussian-rasterization
+          cd diff-gaussian-rasterization
+          # Compila
+          pip wheel . --no-deps --no-build-isolation -w ../dist_temp
+          cd ..
+          # Rinomina per includere CUDA version nel nome file per evitare conflitti nella release
+          # Es: pacchetto-cp310-linux.whl -> pacchetto-cp310-linux+cu118.whl
+          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          rm -rf dist_temp
+
+      # ==========================================
+      # 2. Simple-KNN
+      # ==========================================
+      - name: Build simple-knn
+        run: |
+          git clone --recursive https://github.com/camenduru/simple-knn
+          cd simple-knn
+          pip wheel . --no-deps --no-build-isolation -w ../dist_temp
+          cd ..
+          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          rm -rf dist_temp
+
+      # ==========================================
+      # 3. Gsplat (Nerfstudio)
+      # ==========================================
+      - name: Build gsplat
+        run: |
+          git clone --recursive https://github.com/nerfstudio-project/gsplat
+          cd gsplat
+          pip wheel . --no-deps --no-build-isolation -w ../dist_temp
+          cd ..
+          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          rm -rf dist_temp
+
+      # ==========================================
+      # 4. Tiny-CUDA-NN (Richiede molta RAM/Tempo)
+      # ==========================================
+      - name: Build tiny-cuda-nn
+        run: |
+          git clone --recursive https://github.com/NVlabs/tiny-cuda-nn
+          cd tiny-cuda-nn/bindings/torch
+          # Limitiamo le architetture per non mandare in timeout la GitHub Action
+          # 75=T4(Colab), 80=A100, 86=3090/A10, 89=4090/L4, 90=H100
+          export TCNN_CUDA_ARCHITECTURES="75;80;86;89"
+          if [[ "${{ matrix.cuda_clean }}" == "12"* ]]; then
+             export TCNN_CUDA_ARCHITECTURES="75;80;86;89;90"
+          fi
+          
+          pip wheel . --no-deps --no-build-isolation -w ../../../dist_temp
+          cd ../../..
+          for f in dist_temp/*.whl; do mv "$f" "dist_final/$(basename "$f" .whl)+cu${{ matrix.cuda_clean }}.whl"; done
+          rm -rf dist_temp
+
+      # Upload Artifacts per debug o release
+      - name: Upload Wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-cu${{ matrix.cuda_clean }}-py${{ matrix.python }}
+          path: dist_final/*.whl
+
+  upload_to_huggingface:
+      needs: build_wheels
+      runs-on: ubuntu-latest
+      if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      steps:
+        - name: Download Artifacts
+          uses: actions/download-artifact@v4
+          with:
+            path: dist
+            merge-multiple: true
+
+        - name: Install Hugging Face CLI
+          run: pip install huggingface_hub
+
+        - name: Upload to Hugging Face
+          env:
+            HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          run: |
+            # Sostituisci TUO_UTENTE/TUO_DATASET
+            export HF_REPO_ID="AterMors/gs_wheels" 
+            
+            echo "Caricamento wheels su $HF_REPO_ID..."
+            
+            # Carica tutti i file .whl nella root del repo HF
+            huggingface-cli upload $HF_REPO_ID dist/ . --repo-type dataset --token $HF_TOKEN
