@@ -174,7 +174,7 @@ jobs:
             # Sostituisci TUO_UTENTE/TUO_DATASET
             export HF_REPO_ID="AterMors/gs_wheels" 
 
-            hf login --token $HF_TOKEN --add-to-git-credential
+            hf auth login --token $HF_TOKEN --add-to-git-credential
             
             echo "Caricamento wheels su $HF_REPO_ID..."
             
