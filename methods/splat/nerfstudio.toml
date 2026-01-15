@@ -3,6 +3,9 @@ title = "Nerfstudio"
 [environment]
 python_version = "3.10"
 cuda = "11.8"
+# Isolamento forzato: impedisce a Python di caricare pacchetti da /home/ater/.local
+# Questo è fondamentale perché vedo dai log che sta caricando sklearn/open3d da lì.
+PYTHONNOUSERSITE = "1"
 
 [installation]
 channels = ["pytorch", "nvidia", "conda-forge"]
@@ -13,12 +16,18 @@ dependencies = [
     # PyTorch con CUDA
     "pytorch=2.1.2",
     "torchvision=0.16.2",
+    "numpy<2.0.0",
 ]
 
 pip_dependencies = [
+    "numpy<2.0.0",
     "nerfstudio",
     "plyfile",
     "tqdm",
     "@wheel:diff-gaussian-rasterization",
     "@wheel:tinycudann",
+]
+
+post_install_commands = [
+    "ns-install-cli",
 ]

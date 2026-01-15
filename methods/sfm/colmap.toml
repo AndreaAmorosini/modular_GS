@@ -1,44 +1,53 @@
-name = "colmap"
-step_type = "sfm"
-description = "Esegue la pipeline SfM completa di COLMAP."
+title = "COLMAP"
+
+[environment]
+# Python 3.10 o 3.11 sono ok. COLMAP binario è indipendente da Python.
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+
 
 [installation]
-conda_env_name = "colmap_env"
-conda_channels = ["pytorch", "nvidia", "conda-forge"]
-conda_packages = [
-    "colmap"
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+dependencies = [
+    # Il pacchetto principale che fornisce 'colmap' CLI e GUI
+    "colmap",
+    
+    # Interfaccia Python ufficiale
+    # "pycolmap",
+    
+    # Tool per processamento immagini e video
+    "ffmpeg",
+    "imagemagick",
+    
+    # PyTorch opzionale (serve solo se usi script che usano GPU per matching tipo SuperGlue/HLoc)
+    "pytorch=2.1.2",
+    "torchvision=0.16.2",
+    "pytorch-cuda=11.8"
 ]
 
-[execution]
-# Questo comando orchestra i vari step di COLMAP.
-command = """
-colmap feature_extractor \
-    --database_path "{{ step_output_dir }}/database.db" \
-    --image_path "{{ inputs.image_dir }}" \
-    --ImageReader.single_camera 1 \
-    --SiftExtraction.use_gpu 1
+pip_dependencies = [
+    # Librerie utili per script di conversione custom (tipo colmap2nerf.py)
+    "pycolmap",
+    "opencv-python",
+    "tqdm",
+    "numpy",
+    "scipy",
+    "pandas",
+    "plyfile"
+]
 
-colmap exhaustive_matcher \
-    --database_path "{{ step_output_dir }}/database.db" \
-    --SiftMatching.use_gpu 1
+# Script di utilità opzionali per convertire dataset
+# Spesso si usano gli script del repo di Gaussian Splatting originale per convertire colmap -> nerf
+# [[installation.git_repos]]
+# url = "https://github.com/graphdeco-inria/gaussian-splatting"
+# branch = "main"
+# path = "gaussian-splatting"
+# recursive = true
 
-mkdir -p "{{ outputs.sparse_model }}"
-
-colmap mapper \
-    --database_path "{{ step_output_dir }}/database.db" \
-    --image_path "{{ inputs.image_dir }}" \
-    --output_path "{{ outputs.sparse_model }}"
-"""
-
-[execution.inputs]
-# Richiede la directory di immagini prodotta dallo step precedente.
-image_dir = "string"
-
-[execution.outputs]
-# L'output è la directory contenente il modello sparso (cameras.bin, images.bin, points3D.bin).\
-sparse_model_dir = "{{ step_output_dir }}/sparse/0"
-colmap_model_dir = "{{ step_output_dir }}"
-primary_output = "colmap_model_dir"
-
-[validation]
-validation_command = "colmap -h"
+build_commands = [
+    # Non ci sono build speciali da fare, colmap da conda forge è precompilato.
+    # Possiamo installare le dipendenze degli script di utils se servono
+    # "pip install -r {{method_vendor_dir}}/gaussian-splatting/requirements.txt"
+]

@@ -272,10 +272,34 @@ class MethodInstaller:
         return candidates[-1]
 
     def _parse_dep(self, s):
-        return s.split("=", 1) if "=" in s else (s, "*")
+        match = re.match(r"^([a-zA-Z0-9_\-\.\[\]]+)\s*([<>=!~]+.*)$", s)
+        if match:
+            name = match.group(1)
+            raw_ver = match.group(2)
+            if raw_ver.startswith("=="):
+                return name, raw_ver[2:]
+            if raw_ver.startswith("=") and not raw_ver.startswith("<") and not raw_ver.startswith(">"):
+                return name, raw_ver[1:]
+            
+            return name, raw_ver
+        return s, "*"
+
+        # return s.split("=", 1) if "=" in s else (s, "*")
 
     def _parse_pypi_dep(self, s):
-        return s.split("==", 1) if "==" in s else (s, "*")
+        match = re.match(r"^([a-zA-Z0-9_\-\.\[\]]+)\s*([<>=!~]+.*)$", s)
+        if match:
+            name = match.group(1)
+            raw_ver = match.group(2)
+            if raw_ver.startswith("=="):
+                return name, raw_ver[2:]
+            if raw_ver.startswith("=") and not raw_ver.startswith("<") and not raw_ver.startswith(">"):
+                return name, raw_ver[1:]
+            
+            return name, raw_ver
+        return s, "*"
 
     def _format_ver(self, v, p=False):
+        if v and any(op in v for op in ["<", ">", "~", "!"]):
+            return v    
         return (f"=={v}" if p else f"{v}.*") if v and v != "*" and "<" not in v else v
