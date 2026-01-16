@@ -1,4 +1,6 @@
 title = "Nerfstudio"
+description = "State-of-the-art framework for NeRF and Splatting training."
+url = "https://github.com/nerfstudio-project/nerfstudio"
 
 [environment]
 python_version = "3.10"
@@ -14,13 +16,12 @@ wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/ma
 
 dependencies = [
     # PyTorch con CUDA
-    "pytorch=2.1.2",
-    "torchvision=0.16.2",
-    "numpy<2.0.0",
+    # "pytorch=2.1.2",
+    # "torchvision=0.16.2",
+    # "numpy<2.0.0",
 ]
 
 pip_dependencies = [
-    "numpy<2.0.0",
     "nerfstudio",
     "plyfile",
     "tqdm",
@@ -28,6 +29,14 @@ pip_dependencies = [
     "@wheel:tinycudann",
 ]
 
-post_install_commands = [
-    "ns-install-cli",
+build_commands = [
+    "pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu118",
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
 ]
+
+post_install_commands = [
+    # "ns-install-cli",
+]
+
+[validation]
+validation_command = "ns-train --help"

@@ -1,0 +1,36 @@
+title = "Sharp Frames"
+description = "Python tool to extract sharp frames from videos or image directories."
+url = "https://github.com/Reflct/sharp-frames-python"
+
+[environment]
+python_version = "3.11"
+# Manteniamo la versione CUDA standard del progetto, anche se qui agisce su CPU/OpenCV spesso
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+
+[installation]
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+dependencies = [
+    # FFmpeg è spesso necessario se Sharp Frames deve gestire video in input
+    "ffmpeg=6.1.2",
+    "x264", 
+    "openh264",
+
+]
+
+pip_dependencies = [
+    "sharp-frames",
+]
+
+
+[validation]
+# Verifica che l'entrypoint CLI sia stato registrato correttamente nel PATH dell'env
+validation_command = "sharp-frames --help"
+
+# Esempio di sezione execution per future pipeline
+[execution]
+command = "sharp-frames {{inputs.video}} {{outputs.sharp_images}} --selection-method best-n --num-frames 400 --min-buffer 3"
+
+[execution.outputs]
+sharp_images = "{{step_output_dir}}/images"

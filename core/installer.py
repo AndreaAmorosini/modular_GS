@@ -100,16 +100,35 @@ class MethodInstaller:
         }
 
         # Dipendenze Conda
+        has_pytorch_cuda = False
+        has_cuda_toolkit = False
+        
         for dep in install_cfg.get("dependencies", []):
             n, v = self._parse_dep(dep)
             pixi["dependencies"][n] = self._format_ver(v)
+            if n == "pytorch-cuda":
+                has_pytorch_cuda = True
+            if n == "cuda-toolkit":
+                has_cuda_toolkit = True
 
         pixi["dependencies"].update(
             {
-                "cuda-toolkit": f"{cuda_ver_raw}.*",
-                "pytorch-cuda": f"{cuda_ver_raw}.*",
+                "cuda-toolkit": f"{cuda_ver_raw}",
+                "pytorch-cuda": f"{cuda_ver_raw}",
+                "cuda-command-line-tools": f"{cuda_ver_raw}.*",
+                "cuda-libraries": f"{cuda_ver_raw}.*",
+                "cuda-cudart": f"{cuda_ver_raw}.*",
+                "cuda-nvcc": f"{cuda_ver_raw}.*",
+
             }
         )
+        
+        # if not has_cuda_toolkit:
+        #     pixi["dependencies"]["cuda-toolkit"] = f"{cuda_ver_raw}.*"
+        
+        # # Aggiungi pytorch-cuda SOLO se non già specificato dall'utente
+        # if not has_pytorch_cuda:
+        #     pixi["dependencies"]["pytorch-cuda"] = f"{cuda_ver_raw}.*"
 
         # Dipendenze PIP e Wheels Remoti
         base_wheel_url = install_cfg.get("wheels_base_url")
@@ -300,6 +319,6 @@ class MethodInstaller:
         return s, "*"
 
     def _format_ver(self, v, p=False):
-        if v and any(op in v for op in ["<", ">", "~", "!"]):
+        if v and any(op in v for op in ["<", ">", "~", "!", "*"]):
             return v    
         return (f"=={v}" if p else f"{v}.*") if v and v != "*" and "<" not in v else v

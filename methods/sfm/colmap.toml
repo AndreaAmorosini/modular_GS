@@ -1,4 +1,6 @@
 title = "COLMAP"
+description = "General-purpose Structure-from-Motion (SfM) and Multi-View Stereo (MVS) pipeline."
+url = "https://colmap.github.io/"
 
 [environment]
 # Python 3.10 o 3.11 sono ok. COLMAP binario è indipendente da Python.
@@ -51,3 +53,6 @@ build_commands = [
     # Possiamo installare le dipendenze degli script di utils se servono
     # "pip install -r {{method_vendor_dir}}/gaussian-splatting/requirements.txt"
 ]
+
+[validation]
+validation_command = "colmap help"

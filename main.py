@@ -23,6 +23,7 @@ app.add_typer(methods_app, name="methods")
 PROJECT_ROOT = Path(__file__).parent.resolve()
 METHODS_DIR = PROJECT_ROOT / "methods"
 ENVS_DIR = PROJECT_ROOT / ".envs"  # Cartella dove Pixi crea gli ambienti
+VENDOR_DIR = PROJECT_ROOT / "vendor"  # Cartella per i repository clonati
 
 
 def _find_manifest(method_name: str) -> Path:
@@ -62,27 +63,25 @@ def run(
 ):
     """Esegue una pipeline definita da un file di configurazione."""
     setup_logging(level=logging.DEBUG if verbose else logging.INFO)
+    
+    # Prepariamo gli overrides
+    overrides = {}
+    if input_file:
+        overrides["input_file"] = str(input_file.resolve())
+    if output_dir:
+        overrides["output_dir"] = str(output_dir.resolve())
 
     try:
-        # PipelineRunner ora si aspetta solo il path della config
-        # Le logiche di override andrebbero gestite dentro o passando un context modificato
-        # Per ora manteniamo la compatibilità base
-        runner = PipelineRunner(str(config_file))
-
-        # Gestione base degli override iniettando nel context se supportato
-        if output_dir:
-            runner.context.output_dir = output_dir
-        if input_file:
-            runner.context.input_file = input_file
-
+        # Passiamo overrides direttamente nel costruttore
+        runner = PipelineRunner(str(config_file), overrides=overrides)
         runner.run()
+        
         typer.secho(f"Pipeline completata con successo!", fg=typer.colors.GREEN)
 
     except Exception as e:
-        logging.error(f"Errore critico: {e}", exc_info=verbose)
+        logging.error(f"Errore critico durante l'esecuzione: {e}", exc_info=verbose)
         typer.secho(f"Pipeline fallita.", fg=typer.colors.RED)
         raise typer.Abort()
-
 
 @methods_app.command("install")
 def install_method(
@@ -156,6 +155,14 @@ def uninstall_method(
             cfg = tomli.load(f)
         env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
         env_path = ENVS_DIR / env_name
+        
+        vendor_dirs = []
+        for repo in cfg.get("installation", {}).get("git_repos", []):
+            dir = repo.get("path")
+            if dir:
+                vendor_dirs.append(VENDOR_DIR / dir)
+            
+
     except:
         # Fallback: prova a usare il method_name direttamente se il file non si trova
         env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
@@ -178,6 +185,12 @@ def uninstall_method(
         typer.secho(
             f"Disinstallazione di '{method_name}' completata!", fg=typer.colors.GREEN
         )
+        
+        typer.echo("Rimozione eventuali repository vendor clonati...")
+        for vdir in vendor_dirs:
+            if vdir.exists():
+                typer.echo(f"  Rimozione {vdir}...")
+                shutil.rmtree(vdir)
 
     except Exception as e:
         logging.error(f"Disinstallazione fallita: {e}", exc_info=verbose)
@@ -185,20 +198,60 @@ def uninstall_method(
             f"Disinstallazione di '{method_name}' fallita.", fg=typer.colors.RED
         )
         raise typer.Abort()
+    
+@methods_app.command("validate")
+def validate(
+    method_name: Annotated[
+        str, typer.Argument(help="Nome del metodo da validare."),
+    ] = None,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Mostra output dettagliato.")
+    ] = False,
+):
+    """Esegue check di validazione sugli ambienti installati"""
+    validator = Validator(METHODS_DIR)
+    
+    if method_name:
+        target_id = Path(method_name).stem
+        validator.validate_method(target_id, verbose=verbose)
+    else:
+        validator.validate_installed(verbose=verbose)
 
 
 # Validator e List possono rimanere se core/validation.py è compatibile,
 # altrimenti andrebbero adattati. Per ora li lasciamo.
 @methods_app.command("list")
 def list_methods():
-    """Elenca tutti i metodi disponibili."""
-    try:
-        Validator(METHODS_DIR).list_methods()
-    except Exception:
-        # Fallback semplice se Validator non è aggiornato
-        typer.echo("Metodi disponibili:")
-        for p in METHODS_DIR.rglob("*.toml"):
-            typer.echo(f" - {p.stem} ({p.relative_to(METHODS_DIR)})")
+    """Elenca tutti i metodi disponibili ed installati."""
+    validator = Validator(METHODS_DIR)
+    registry = validator.registry
+    
+    typer.secho(f"\n{'METODO':<25} {'STATO':<12} {'DESCRIZIONE'}", bold=True, underline=True)
+
+    for method_id, config in sorted(registry.items()):
+        safe_name = config.get("title", method_id).replace(" ", "_").lower()
+        env_path = ENVS_DIR / safe_name
+        is_installed = (env_path / "pixi.toml").exists()
+        
+        status_str = "INSTALLATO" if is_installed else "NON INSTALLATO"
+        status_color = typer.colors.GREEN if is_installed else typer.colors.RED
+        
+        desc = config.get("description", "N/A")
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+            
+        typer.secho(f"{method_id:<25} ", nl=False, bold=True)
+        typer.secho(f"{status_str:<12} ", fg=status_color, nl=False)
+        typer.echo(f"{desc}")
+        
+        meta_info = []
+        if is_installed:
+            meta_info.append(f"Path: ./.envs/{safe_name}")
+        if "url" in config:
+            meta_info.append(f"URL: {config['url']}")
+            
+        if meta_info:
+            typer.secho(f"   └── {', '.join(meta_info)}", fg=typer.colors.BRIGHT_BLACK)
 
 
 if __name__ == "__main__":
