@@ -78,17 +78,46 @@ jobs:
       # ==========================================
       # 1. Diff-Gaussian-Rasterization
       # ==========================================
+      # - name: Build diff-gaussian-rasterization
+      #   env:
+      #     TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
+      #   run: |
+      #     git clone --recursive https://github.com/graphdeco-inria/diff-gaussian-rasterization
+      #     cd diff-gaussian-rasterization
+      #     pip wheel . --no-deps --no-build-isolation -w ../dist_temp
+      #     cd ..
+      #     # SPOSTA SENZA RINOMINARE (Mantiene nome standard accettato da Pixi/Pip)
+      #     mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
+      #     rm -rf dist_temp
+
       - name: Build diff-gaussian-rasterization
         env:
           TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
         run: |
-          git clone --recursive https://github.com/graphdeco-inria/diff-gaussian-rasterization
-          cd diff-gaussian-rasterization
-          pip wheel . --no-deps --no-build-isolation -w ../dist_temp
-          cd ..
-          # SPOSTA SENZA RINOMINARE (Mantiene nome standard accettato da Pixi/Pip)
+          # Clona gaussian-splatting con tutti i submodules
+          git clone --recursive https://github.com/graphdeco-inria/gaussian-splatting gs_repo
+          
+          # Builda dal submodule (stesso commit referenziato da gaussian-splatting)
+          cd gs_repo/submodules/diff-gaussian-rasterization
+          pip wheel . --no-deps --no-build-isolation -w ../../../dist_temp
+          cd ../../..
+          
           mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
           rm -rf dist_temp
+      
+      - name: Build fused-ssim
+        env:
+          TORCH_CUDA_ARCH_LIST: "7.5 8.0 8.6 8.9"
+        run: |
+          cd gs_repo/submodules/fused-ssim
+          pip wheel . --no-deps --no-build-isolation -w ../../../dist_temp
+          cd ../../..
+          
+          mv dist_temp/*.whl dist_final/cu${{ matrix.cuda_clean }}/
+          rm -rf dist_temp
+          
+          # Pulizia del repo gaussian-splatting
+          rm -rf gs_repo
 
       # ==========================================
       # 2. Simple-KNN

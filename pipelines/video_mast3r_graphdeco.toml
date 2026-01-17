@@ -25,7 +25,7 @@ primary_output = "model_dir"
 name = "Training"
 method = "methods/splat/gaussian_splatting_graphdeco.toml"
 [steps.inputs]
-# Usa il path "GS-Ready" creato dallo step SfM
-source_path = "{{context.sfm_ready_path}}"
+#{StepName}_{output_name}
+source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
 iterations = 10000

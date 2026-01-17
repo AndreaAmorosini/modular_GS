@@ -4,7 +4,7 @@ url = "https://github.com/naver/mast3r_sfm"
 
 [environment]
 python_version = "3.11"
-cuda = "11.8"
+cuda = "12.1"
 PYTHONNOUSERSITE = "1"
 
 
@@ -18,16 +18,23 @@ dependencies = [
     "make",
     "cmake",
     "gcc_linux-64=11.*",
+    "glomap",
 
-    "eigen",
-    "ceres-solver>=2.1.0",
-    "glog",
-    "gflags",
-    "boost",
-    "suitesparse",
-    "flann",
+    # "eigen",
+    # "ceres-solver>=2.1.0",
+    # "glog",
+    # "gflags",
+    # "boost",
+    # "suitesparse",
+    # "flann",
     # "freeimage", # Spesso opzionale o inclusa, controlliamo se serve
-    "metis",     # Dipendenza di SuiteSparse spesso necessaria
+    # "glew",
+    # "metis",
+    # "mesa-libgl-devel-cos7-x86_64",
+    # "mesa-libglu-devel-cos7-x86_64",
+    # "cgal",
+    # "cuda-toolkit=12.1", # Fornisce header come curand_kernel.h necessari per la compilazione CUDA
+    # "ninja",
 ]
 
 pip_dependencies = [
@@ -52,7 +59,7 @@ build_commands = [
     "bash -c 'cd {{method_vendor_dir}}/asmk && python setup.py build_ext --inplace'",
     "pip install 'numpy<2.0.0'",
 
-    "bash -c 'cd {{method_vendor_dir}}/glomap && mkdir -p build && cd build && cmake .. -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_BUILD_TYPE=Release && make -j$(nproc) && make install'",
+    # "bash -c 'export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CONDA_PREFIX/include:$CPATH && cd {{method_vendor_dir}}/glomap && mkdir -p build && cd build && cmake .. -GNinja -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_CUDA_ARCHITECTURES=\"90;89;86;80;75;70;61\" && ninja && ninja install'",
 ]
 
 post_install_commands = [
@@ -73,14 +80,46 @@ branch = "master"
 path = "asmk"
 recursive = true
 
-[[installation.git_repos]]
-url = "https://github.com/colmap/glomap.git"
-branch = "main" 
-path = "glomap"
-recursive = true
+# [[installation.git_repos]]
+# url = "https://github.com/colmap/glomap.git"
+# branch = "main" 
+# path = "glomap"
+# recursive = true
 
 [validation]
-validation_command = "python -c 'import sys; print(\"1. Paths\"); sys.path.insert(0, \"vendor/mast3r\"); sys.path.insert(0, \"vendor/asmk\"); print(\"2. NumPy\"); import numpy; print(f\"   NumPy {numpy.__version__}\"); print(\"3. Torch\"); import torch; print(f\"Torch {torch.__version__}\"); print(f\"   CUDA: {torch.cuda.is_available()}\"); print(\"4. Faiss\"); import faiss; print(\"   Faiss OK\"); print(\"5. ASMK\"); import asmk; print(\"   ASMK OK\"); print(\"6. Mast3r\"); import mast3r.model; print(\"   Mast3r OK\"); print(\"VALIDATION COMPLETE\")'"
+validation_command = """
+python -c "
+import sys
+sys.path.insert(0, 'vendor/mast3r')
+sys.path.insert(0, 'vendor/asmk')
+import subprocess
+
+print('=== MAST3R SFM VALIDATION ===')
+print('1. Python modules...')
+
+import numpy; print('   NumPy ' + numpy.__version__)
+import torch; print('   Torch ' + torch.__version__ + ', CUDA: ' + str(torch.cuda.is_available()))
+import faiss; print('   Faiss OK')
+import asmk; print('   ASMK OK')
+import mast3r.model; print('   Mast3r OK')
+import pycolmap; print('   PyColmap ' + pycolmap.__version__)
+
+print('2. External tools...')
+try:
+    subprocess.run(['colmap', '-h'], capture_output=True, check=True)
+    print('   COLMAP OK')
+except:
+    print('   COLMAP NOT FOUND')
+
+try:
+    subprocess.run(['glomap', '-h'], capture_output=True, check=True)
+    print('   GLOMAP OK')
+except:
+    print('   GLOMAP NOT FOUND')
+
+print('=== VALIDATION COMPLETE ===')
+"
+"""
 
 [execution]
 command = """

@@ -49,6 +49,8 @@ validation_command = "python -c 'import sys; sys.path.append(\"vendor/gaussian_s
 
 [execution]
 command = "python {{method_vendor_dir}}/gaussian_splatting/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/gaussian_splatting/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+# command = "python {{method_vendor_dir}}/gaussian_splatting/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

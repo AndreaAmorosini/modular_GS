@@ -203,6 +203,15 @@ class MethodInstaller:
 
     def _run_env_commands(self, commands: List[str], env_path: Path):
         """Esegue comandi shell all'interno dell'ambiente Pixi."""
+        
+        #Variabili d'ambiente dal TOML
+        env_cfg = self.config.get("environment", {})
+        custom_env = os.environ.copy()
+        
+        for key, value in env_cfg.items():
+            if key not in ("python_version", "cuda"):
+                custom_env[key] = str(value)
+                
         for cmd_template in commands:
             cmd_str = self._resolve_template(cmd_template)
             print(f"Running: {cmd_str}")
@@ -220,7 +229,7 @@ class MethodInstaller:
 
             # Eseguiamo dalla root del progetto per path relativi coerenti
             try:
-                subprocess.check_call(full_cmd, cwd=self.base_path)
+                subprocess.check_call(full_cmd, cwd=self.base_path, env=custom_env)
             except subprocess.CalledProcessError as e:
                 print(f"Command failed: {cmd_str}")
                 raise e
