@@ -21,7 +21,8 @@ dependencies = [
     "gxx_linux-64",
     "gcc_linux-64",
     "make",
-    "cmake"
+    "cmake",
+    "colmap",
 ]
 
 pip_dependencies = [
