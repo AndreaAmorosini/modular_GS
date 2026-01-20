@@ -1,0 +1,63 @@
+title = "Taming 3DGS"
+description = "Pipeline di training per Taming-3DGS."
+url = "https://github.com/humansensinglab/taming-3dgs"
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+
+[installation]
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+# Aggiunta URL per le wheel precompilate (come in nerfstudio.toml)
+wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
+
+dependencies = [
+    # "pytorch=2.1.2",
+    # "torchvision=0.16.2",
+    # Compilatori di sistema (potrebbero servire ancora per dipendenze minori, meglio lasciarli)
+    "gxx_linux-64=11.*",
+    "gcc_linux-64=11.*",
+    "make",
+    "cmake",
+    "ninja",
+    "glm"
+]
+
+pip_dependencies = [
+    "plyfile",
+    "tqdm",
+    "argparse",
+    "setuptools",
+    "wheel",
+    # Usiamo le versioni precompilate invece di compilare localmente
+    # "@wheel:diff-gaussian-rasterization",
+    # "@wheel:simple_knn",
+    # "@wheel:fused_ssim"
+]
+
+build_commands = [
+    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/diff-gaussian-rasterization",
+    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/simple-knn",
+    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/fused-ssim",
+]
+
+
+[[installation.git_repos]]
+url = "https://github.com/humansensinglab/taming-3dgs"
+branch = "main"
+path = "taming-3dgs"
+recursive = true
+
+[validation]
+validation_command = "python -c 'import sys; sys.path.append(\"vendor/taming-3dgs\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_gaussian_rasterization; print(\"   diff_gaussian_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); import fused_ssim; print(\" fused_ssim OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
+
+[execution]
+# TODO: sostituire con lo script/entrypoint reale del repo
+command = "python {{method_vendor_dir}}/taming-3dgs/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/taming-3dgs/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"

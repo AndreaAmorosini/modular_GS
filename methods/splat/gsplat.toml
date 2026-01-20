@@ -1,0 +1,62 @@
+title = "GSplat"
+description = "Implementazione CUDA ultra-veloce di Gaussian Splatting sviluppata da Nerfstudio."
+url = "https://github.com/nerfstudio-project/gsplat"
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+
+[installation]
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
+
+dependencies = [
+    "gxx_linux-64",
+    "gcc_linux-64",
+    "make",
+    "cmake",
+    "ninja",       # Essenziale per la compilazione JIT dei kernel CUDA di gsplat
+    "cuda-toolkit" # Richiesto per i file header CUDA durante la compilazione
+]
+
+pip_dependencies = [
+    "numpy<2.0.0",
+    "tqdm",
+    "typing_extensions",
+    "tyro",        # CLI parser usato negli esempi di gsplat
+    "imageio",
+    "scikit-learn",
+    "lpips",       # Per le metriche di training
+    "matplotlib",
+    "tensorboard",
+    # "@wheel:gsplat",
+]
+
+build_commands = [
+    # Installiamo PyTorch compatibile con CUDA 11.8
+    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
+    # "pip install \"numpy<2.0.0\""
+    # Installiamo gsplat in modalità editable dal codice sorgente clonato.
+    # Questo compila i binding CUDA specifici per l'ambiente.
+    "pip install --no-build-isolation -r {{method_vendor_dir}}/gsplat/examples/requirements.txt",
+    "pip install --no-build-isolation -e {{method_vendor_dir}}/gsplat",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/nerfstudio-project/gsplat"
+branch = "main"
+path = "gsplat"
+recursive = true
+
+[validation]
+validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat.__version__}\"); import torch; print(f\"CUDA Available: {torch.cuda.is_available()}\")'"
+
+[execution]
+# Utilizza lo script di esempio 'simple_trainer.py' incluso nel repository.
+# --disable_viewer: disabilita il visualizzatore interattivo per il training headless (batch)
+command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py --data_dir {{inputs.source_path}} --result_dir {{outputs.trained_model_dir}} --data_factor 4 --disable_viewer"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"

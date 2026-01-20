@@ -29,13 +29,15 @@ pip_dependencies = [
     "tqdm",
     "argparse",
     # Usiamo le versioni precompilate invece di compilare localmente
-    "@wheel:diff-gaussian-rasterization",
-    "@wheel:simple_knn"
+    # "@wheel:diff-gaussian-rasterization",
+    # "@wheel:simple_knn"
 ]
 
 build_commands = [
-    "pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu118",
+    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
     "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/diff-gaussian-rasterization",
+    "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/simple-knn",
 ]
 
 [[installation.git_repos]]

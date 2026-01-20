@@ -109,7 +109,19 @@ class MethodInstaller:
             if n == "pytorch-cuda":
                 has_pytorch_cuda = True
             if n == "cuda-toolkit":
-                has_cuda_toolkit = True
+                has_cuda_toolkit = True                
+                
+            C_COMPILER_VERSION = None
+            if int(cuda_clean) < 120:
+                C_COMPILER_VERSION = "11"
+            elif int(cuda_clean) >=  120:
+                C_COMPILER_VERSION = "12"
+                
+            
+            if n == "gxx_linux-64":  
+                pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
+            if n == "gcc_linux-64":
+                pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
 
         pixi["dependencies"].update(
             {
@@ -119,6 +131,9 @@ class MethodInstaller:
                 "cuda-libraries": f"{cuda_ver_raw}.*",
                 "cuda-cudart": f"{cuda_ver_raw}.*",
                 "cuda-nvcc": f"{cuda_ver_raw}.*",
+                "cuda-cudart-dev": f"{cuda_ver_raw}.*",
+                "cuda-driver-dev": f"{cuda_ver_raw}.*",
+                "cuda-cccl": f"{cuda_ver_raw}.*",
 
             }
         )
@@ -207,7 +222,41 @@ class MethodInstaller:
         #Variabili d'ambiente dal TOML
         env_cfg = self.config.get("environment", {})
         custom_env = os.environ.copy()
+        custom_env["CUDA_HOME"] = str(env_path.resolve())
         
+        pixi_env_prefix = env_path / ".pixi" / "envs" / "default"
+        
+        # Se la cartella esiste, usala come root per CUDA e compilatori
+        if pixi_env_prefix.exists():
+            custom_env["CUDA_HOME"] = str(pixi_env_prefix.resolve())
+            
+            # Setup Compilatori (GCC/G++) forniti da Pixi/Conda
+            bin_dir = pixi_env_prefix / "bin"
+            lib_dir = pixi_env_prefix / "lib"
+            include_dir = pixi_env_prefix / "include"
+            
+            cc_path = bin_dir / "x86_64-conda-linux-gnu-gcc"
+            cxx_path = bin_dir / "x86_64-conda-linux-gnu-g++"
+            
+            if cc_path.exists():
+                custom_env["CC"] = str(cc_path)
+                custom_env["CXX"] = str(cxx_path)
+                custom_env["CMAKE_C_COMPILER"] = str(cc_path)
+                custom_env["CMAKE_CXX_COMPILER"] = str(cxx_path)
+            
+            custom_env["CPATH"] = f"{include_dir}:{custom_env.get('CPATH', '')}"
+            custom_env["C_INCLUDE_PATH"] = f"{include_dir}:{custom_env.get('C_INCLUDE_PATH', '')}"
+            custom_env["CPLUS_INCLUDE_PATH"] = f"{include_dir}:{custom_env.get('CPLUS_INCLUDE_PATH', '')}"
+            
+            custom_env["NVCC_PREPEND_FLAGS"] = "-allow-unsupported-compiler"
+            
+            custom_env["LD_LIBRARY_PATH"] = f"{lib_dir}:{custom_env.get('LD_LIBRARY_PATH', '')}"
+            custom_env["PATH"] = f"{bin_dir}:{custom_env.get('PATH', '')}"            
+        else:
+            # Fallback se la struttura è diversa (ma con Pixi standard è sempre questa)
+            custom_env["CUDA_HOME"] = str(env_path.resolve())
+            
+                    
         for key, value in env_cfg.items():
             if key not in ("python_version", "cuda"):
                 custom_env[key] = str(value)
