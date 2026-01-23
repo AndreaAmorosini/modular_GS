@@ -130,7 +130,7 @@ python {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py \
 --input_files {{inputs.images_dir}} \
 --output_dir {{outputs.model_dir}} \
 --device cuda --shared_intrinsics \
---scenegraph_type swin --winsize 20 --win_cyclic && \
+--scenegraph_type swin --winsize 30 --win_cyclic && \
 mkdir -p {{outputs.model_dir}}/images && \
 cp -rn {{inputs.images_dir}}/* {{outputs.model_dir}}/images/
 '

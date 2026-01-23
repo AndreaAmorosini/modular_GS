@@ -23,6 +23,9 @@ class PipelineContext:
         if args.get("input_file"):
             self.data["input_file"] = str(args["input_file"])
             
+        if args.get("restart"):
+            self.data["restart"] = True
+            
         self.step_dirs = {}
         
         # Se non specificato, usa default
@@ -36,6 +39,12 @@ class PipelineContext:
         """Crea la directory fisica di output."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.logger.info(f"Pipeline output directory: {self.output_dir}")
+        
+        #Check sul file di stato
+        restart = self.data.get("restart", False)
+        if (self.output_dir / "pipeline_status.json").exists() and not restart:
+            self.logger.info("Trovato pipeline_status.json.")
+            return
         
         #Controlla se ci sono folder o file all'interno del percorso di output
         if any(self.output_dir.iterdir()):

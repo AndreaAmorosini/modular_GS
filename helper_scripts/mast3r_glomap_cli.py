@@ -310,42 +310,16 @@ def get_reconstructed_scene(
     except Exception as e:
         print(f"[WARN] could not compute suggested_dataparser_scale: {e}")
 
-    # Correzzione dei path per compatibilita' con formato COLMAP per GaussianSplatting Graphdeco
-    # TODO: Rendere questa parte dipendente da variabili nel TOML ed estrapolarla fuori da questo script
-
-    input_path = os.path.join(outdir, "input")
-    distorted_sparse_path = os.path.join(outdir, "distorted", "sparse", "0")
-    colmap_sparse_path = os.path.join(outdir, "colmap", "sparse", "0")
-
-    if not os.path.exists(input_path):
-        images_path = os.path.join(outdir, "images")
-        if os.path.isdir(images_path):
-            # Symlink
-            try:
-                os.symlink(images_path, input_path)
-                print(f"[INFO] created symlink {input_path} -> {images_path}")
-            except OSError:
-                shutil.copytree(images_path, input_path)
-                print(f"[INFO] copied images/ to {input_path}")
-        else:
-            shutil.copytree(root_path, input_path)
-            print(f"[INFO] copied images/ from {root_path} to {input_path}")
-
-    if os.path.isdir(colmap_sparse_path) and not os.path.exists(distorted_sparse_path):
-        os.makedirs(os.path.dirname(distorted_sparse_path), exist_ok=True)
-        shutil.copytree(colmap_sparse_path, distorted_sparse_path)
-        print(
-            f"[INFO] copied COLMAP sparse model to {distorted_sparse_path} for GS compatibility"
-        )
-        # Look for colmap.db in outdir
-        colmap_db_src = os.path.join(outdir, "colmap.db")
-        # rename to database.db
-        colmap_db_dst = os.path.join(outdir, "distorted", "database.db")
-        if os.path.isfile(colmap_db_src):
-            shutil.copy2(colmap_db_src, colmap_db_dst)
-            print(
-                f"[INFO] copied COLMAP database to {colmap_db_dst} for GS compatibility"
-            )
+    # Ensure images/ folder exists in output (Standard COLMAP structure)
+    # This allows the pipeline runner to find images and adapt them for subsequent steps
+    images_out_path = os.path.join(outdir, "images")
+    if not os.path.exists(images_out_path):
+        try:
+            os.symlink(root_path, images_out_path)
+            print(f"[INFO] created symlink {images_out_path} -> {root_path}")
+        except OSError:
+            shutil.copytree(root_path, images_out_path)
+            print(f"[INFO] copied images/ to {images_out_path}")
 
     # gs_sparse_path = os.path.join(outdir, "sparse")
     # colmap_sparse_path = os.path.join(outdir, "colmap", "sparse")

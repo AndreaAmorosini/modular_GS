@@ -44,6 +44,11 @@ build_commands = [
     "pip install --no-build-isolation -e {{method_vendor_dir}}/gsplat",
 ]
 
+post_install_commands = [
+    # Eventuali comandi da eseguire dopo l'installazione
+    "cp {{project_root}}/helper_scripts/gsplat_chkp_to_ply.py {{method_vendor_dir}}/gsplat/gsplat_chkp_to_ply.py"
+]
+
 [[installation.git_repos]]
 url = "https://github.com/nerfstudio-project/gsplat"
 branch = "main"
@@ -56,7 +61,7 @@ validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat
 [execution]
 # Utilizza lo script di esempio 'simple_trainer.py' incluso nel repository.
 # --disable_viewer: disabilita il visualizzatore interattivo per il training headless (batch)
-command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py --data_dir {{inputs.source_path}} --result_dir {{outputs.trained_model_dir}} --data_factor 4 --disable_viewer"
+command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py default --data-dir {{inputs.source_path}} --result-dir {{outputs.trained_model_dir}} --data-factor 1 --disable-viewer --save-ply --max-steps {{kwargs.get('iterations', 30000)}}"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

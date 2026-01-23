@@ -10,9 +10,6 @@ PYTHONNOUSERSITE = "1"
 [installation]
 channels = ["pytorch", "nvidia", "conda-forge"]
 
-# Aggiunta URL per le wheel precompilate (come in nerfstudio.toml)
-wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
-
 dependencies = [
     # "pytorch=2.1.2",
     # "torchvision=0.16.2",
@@ -22,7 +19,10 @@ dependencies = [
     "make",
     "cmake",
     "ninja",
-    "glm"
+    "glm",
+    "colmap",
+    "plyfile",
+    "websockets",
 ]
 
 pip_dependencies = [
@@ -31,10 +31,7 @@ pip_dependencies = [
     "argparse",
     "setuptools",
     "wheel",
-    # Usiamo le versioni precompilate invece di compilare localmente
-    # "@wheel:diff-gaussian-rasterization",
-    # "@wheel:simple_knn",
-    # "@wheel:fused_ssim"
+    "websockets"
 ]
 
 build_commands = [
@@ -56,8 +53,13 @@ recursive = true
 validation_command = "python -c 'import sys; sys.path.append(\"vendor/taming-3dgs\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_gaussian_rasterization; print(\"   diff_gaussian_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); import fused_ssim; print(\" fused_ssim OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
 
 [execution]
-# TODO: sostituire con lo script/entrypoint reale del repo
 command = "python {{method_vendor_dir}}/taming-3dgs/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/taming-3dgs/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+
+[execution.inputs]
+expected_input_images_folder = "input"
+expected_colmap_folder = "distorted/sparse/0"
+expected_db_folder = "distorted"
+
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

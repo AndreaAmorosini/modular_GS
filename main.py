@@ -3,6 +3,7 @@ import logging
 import tomli
 from pathlib import Path
 from typing_extensions import Annotated
+from typing import List, Optional
 
 # Importiamo le nuove classi aggiornate per Pixi
 from core.runner import PipelineRunner
@@ -60,6 +61,16 @@ def run(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Log di DEBUG dettagliati.")
     ] = False,
+    restart: Annotated[
+        bool, typer.Option("--restart", "-r", help="Pulisce la cartella di output prima di iniziare.")
+    ] = False,
+    set_params: Annotated[
+        Optional[List[str]], 
+        typer.Option("--set", "-s", help="Override parametri (es. --set iterations=1000).")
+    ] = None,
+    show_info: Annotated[
+        bool, typer.Option("--info", help="Mostra i parametri configurabili della pipeline ed esce.")
+    ] = False,
 ):
     """Esegue una pipeline definita da un file di configurazione."""
     setup_logging(level=logging.DEBUG if verbose else logging.INFO)
@@ -70,10 +81,35 @@ def run(
         overrides["input_file"] = str(input_file.resolve())
     if output_dir:
         overrides["output_dir"] = str(output_dir.resolve())
+    if restart:
+        overrides["restart"] = True
+
+
+    if set_params:
+        for param in set_params:
+            if "=" not in param:
+                logging.warning(f"Ignorato parametro malformato '{param}'. Usa KEY=VALUE.")
+                continue
+            key, val = param.split("=", 1)
+            # Tentativo di cast automatico
+            if val.lower() == "true": val = True
+            elif val.lower() == "false": val = False
+            elif val.isdigit(): val = int(val)
+            else:
+                try:
+                    val = float(val)
+                except ValueError:
+                    pass 
+            overrides[key] = val
 
     try:
         # Passiamo overrides direttamente nel costruttore
         runner = PipelineRunner(str(config_file), overrides=overrides)
+        
+        if show_info:
+            runner.print_help()
+            return
+
         runner.run()
         
         typer.secho(f"Pipeline completata con successo!", fg=typer.colors.GREEN)
