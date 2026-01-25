@@ -8,16 +8,15 @@ from typing import Dict, Optional, Any
 from .context import PipelineContext
 from .components.base import MethodRunner
 # from .installer import MethodInstaller # Opzionale se vuoi auto-installare
+from .post_processing import filter_ply_by_opacity
 
 class PipelineRunner:
     def __init__(self, pipeline_config_path: str, overrides: Optional[Dict[str, Any]] = None):
         self.pipeline_path = Path(pipeline_config_path).resolve()
-        # Assumiamo che la pipeline sia in project_root/pipelines/file.toml
         self.base_path = self.pipeline_path.parent.parent 
         self.envs_base_dir = self.base_path / ".envs"
         
         self.overrides = overrides or {}
-        # Inizializza contesto PASSANDO gli overrides subito
         self.context = PipelineContext(self.base_path, overrides)
 
         with open(self.pipeline_path, "rb") as f:
@@ -36,13 +35,13 @@ class PipelineRunner:
     def _run_step(self, step_config: Dict, index: int):
         step_name = step_config.get("name", f"Step_{index}")
         
-        # --- Check Skip Logic ---
+        #Check Skip Logic
         completed_steps = self._load_completed_steps()
         if step_name in completed_steps:
             print(f"\n--- Step [{step_name}] previously completed. Skipping execution. ---")
             outputs = completed_steps[step_name]["outputs"]
         else:
-            # --- Execution Logic ---
+            #Execution Logic
             method_rel_path = step_config.get("method")
             
             method_path = (self.base_path / method_rel_path).resolve()
@@ -57,7 +56,7 @@ class PipelineRunner:
 
             env_path = self.envs_base_dir / method_path.stem
 
-            # Check veloce esistenza env
+            # Check esistenza env
             if not (env_path / "pixi.toml").exists():
                  print(f"Errore: Ambiente {method_path.stem} non installato.")
                  raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
@@ -103,6 +102,52 @@ class PipelineRunner:
             # 3. Esecuzione (MethodRunner usa Inputs reali per comporre il comando)
             outputs = runner.run(step_inputs, step_kwargs, step_output_dir)
             
+            #Global Post-Processing: Opacity Filter
+            global_opts = self.config.get("global_options", {})
+            opacity_threshold = global_opts.get("filter_opacity_threshold")
+
+            if opacity_threshold is not None:
+                # Check on .PLY
+                # TODO : Magari da generalizzare, ma per ora supporta formati gsplat e formati gaussian_spatting di graphdeco-inria
+                # TODO: Estrarre dalla logica del post processing per copiare l'output finale in una cartella nella root del progetto
+                search_dirs = {step_output_dir}
+                for val in outputs.values():                    
+                    if isinstance(val, (str, Path)):
+                        p = Path(val)
+                        if p.exists() and p.is_dir():
+                            search_dirs.add(p)
+                target_ply = None
+                highest_num = -1
+                
+                for sd in search_dirs:
+                    subdirs = [sd / "point_cloud", sd / "ply"]
+                    for subdir in subdirs:
+                        if subdir.exists() and subdir.is_dir():
+                            candidates = list(subdir.rglob("*.ply"))
+                            for c in candidates:
+                                #To avoid temp files
+                                if "_filtered" in c.name:
+                                    continue
+                                nums = re.findall(r"\d+", c.stem)
+                                current_num = int(nums[-1]) if nums else 0
+                                if target_ply is None or current_num > highest_num:
+                                    target_ply = c
+                                    highest_num = current_num
+                                    
+                if target_ply:
+                    print(f"[Auto-Filter] Selected PLY: '{target_ply.name}' (Iteration: {highest_num})")
+                    filtered_path = target_ply.parent / f"{target_ply.stem}_filtered{target_ply.suffix}.ply"
+                    filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold))
+                    
+                    updated_existing = False
+                    for key, val in outputs.items():
+                        if isinstance(val, (str, Path)):
+                            outputs[key] = filtered_path
+                            updated_existing = True
+                            
+                    if not updated_existing:
+                        outputs["filtered_ply"] = filtered_path
+            
             # Save completion status
             self._save_step_completion(step_name, outputs)
 
@@ -117,7 +162,6 @@ class PipelineRunner:
         primary_out_key = step_config.get("primary_output")
         
         if pipeline_mapping_key:
-             # Se la pipeline dice 'salva l'output principale in sfm_ready_path'
              # Cerchiamo di capire qual è l'output principale
              val_to_save = None
              if primary_out_key and primary_out_key in outputs:
@@ -127,7 +171,7 @@ class PipelineRunner:
              
              if val_to_save:
                  self.context.set(pipeline_mapping_key, val_to_save)
-                 print(f"   -> Context[{pipeline_mapping_key}] = {val_to_save}")
+                 print(f"-> Context[{pipeline_mapping_key}] = {val_to_save}")
 
     def _adapt_input_structure(self, inputs: Dict[str, Any]):
         """

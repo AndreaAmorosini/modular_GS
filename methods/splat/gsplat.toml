@@ -10,8 +10,6 @@ PYTHONNOUSERSITE = "1"
 [installation]
 channels = ["pytorch", "nvidia", "conda-forge"]
 
-wheels_base_url = "https://huggingface.co/datasets/AterMors/gs_wheels/resolve/main"
-
 dependencies = [
     "gxx_linux-64",
     "gcc_linux-64",
@@ -31,23 +29,14 @@ pip_dependencies = [
     "lpips",       # Per le metriche di training
     "matplotlib",
     "tensorboard",
-    # "@wheel:gsplat",
 ]
 
 build_commands = [
-    # Installiamo PyTorch compatibile con CUDA 11.8
     "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
-    # "pip install \"numpy<2.0.0\""
-    # Installiamo gsplat in modalità editable dal codice sorgente clonato.
-    # Questo compila i binding CUDA specifici per l'ambiente.
     "pip install --no-build-isolation -r {{method_vendor_dir}}/gsplat/examples/requirements.txt",
     "pip install --no-build-isolation -e {{method_vendor_dir}}/gsplat",
 ]
 
-post_install_commands = [
-    # Eventuali comandi da eseguire dopo l'installazione
-    "cp {{project_root}}/helper_scripts/gsplat_chkp_to_ply.py {{method_vendor_dir}}/gsplat/gsplat_chkp_to_ply.py"
-]
 
 [[installation.git_repos]]
 url = "https://github.com/nerfstudio-project/gsplat"
@@ -62,6 +51,12 @@ validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat
 # Utilizza lo script di esempio 'simple_trainer.py' incluso nel repository.
 # --disable_viewer: disabilita il visualizzatore interattivo per il training headless (batch)
 command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py default --data-dir {{inputs.source_path}} --result-dir {{outputs.trained_model_dir}} --data-factor 1 --disable-viewer --save-ply --max-steps {{kwargs.get('iterations', 30000)}}"
+
+[execution.inputs]
+expected_input_images_folder = "images"
+expected_colmap_folder = "sparse/0"
+expected_db_folder = "."
+
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

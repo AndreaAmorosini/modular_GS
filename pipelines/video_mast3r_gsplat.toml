@@ -1,6 +1,9 @@
 title = "Video to Gaussian Splatting (MASt3R)"
 description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
 
+[global_options]
+filter_opacity_threshold = 0.05
+
 [[steps]]
 name = "Extraction"
 method = "methods/preprocess/sharp_frames.toml"

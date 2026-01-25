@@ -3,7 +3,6 @@ description = "General-purpose Structure-from-Motion (SfM) and Multi-View Stereo
 url = "https://colmap.github.io/"
 
 [environment]
-# Python 3.10 o 3.11 sono ok. COLMAP binario è indipendente da Python.
 python_version = "3.10"
 cuda = "11.8"
 PYTHONNOUSERSITE = "1"
@@ -13,24 +12,15 @@ PYTHONNOUSERSITE = "1"
 channels = ["pytorch", "nvidia", "conda-forge"]
 
 dependencies = [
-    # Il pacchetto principale che fornisce 'colmap' CLI e GUI
     "colmap",
-    
-    # Interfaccia Python ufficiale
-    # "pycolmap",
-    
-    # Tool per processamento immagini e video
     "ffmpeg",
     "imagemagick",
-    
-    # PyTorch opzionale (serve solo se usi script che usano GPU per matching tipo SuperGlue/HLoc)
     "pytorch=2.1.2",
     "torchvision=0.16.2",
     "pytorch-cuda=11.8"
 ]
 
 pip_dependencies = [
-    # Librerie utili per script di conversione custom (tipo colmap2nerf.py)
     "pycolmap",
     "opencv-python",
     "tqdm",
@@ -40,18 +30,8 @@ pip_dependencies = [
     "plyfile"
 ]
 
-# Script di utilità opzionali per convertire dataset
-# Spesso si usano gli script del repo di Gaussian Splatting originale per convertire colmap -> nerf
-# [[installation.git_repos]]
-# url = "https://github.com/graphdeco-inria/gaussian-splatting"
-# branch = "main"
-# path = "gaussian-splatting"
-# recursive = true
 
 build_commands = [
-    # Non ci sono build speciali da fare, colmap da conda forge è precompilato.
-    # Possiamo installare le dipendenze degli script di utils se servono
-    # "pip install -r {{method_vendor_dir}}/gaussian-splatting/requirements.txt"
 ]
 
 [validation]
