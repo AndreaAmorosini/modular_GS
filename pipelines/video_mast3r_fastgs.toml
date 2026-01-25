@@ -1,0 +1,34 @@
+title = "Video to Gaussian Splatting (MASt3R)"
+description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
+
+[global_options]
+filter_opacity_threshold = 0.1
+
+[[steps]]
+name = "Extraction"
+method = "methods/preprocess/sharp_frames.toml"
+
+[steps.inputs]
+video = "{{context.input_file}}"
+
+[[steps]]
+name = "StructureFromMotion"
+method = "methods/sfm/mast3r_sfm.toml"
+[steps.inputs]
+# Prende l'output dello step precedente
+images_dir = "{{context.Extraction_sharp_images}}"
+[steps.kwargs]
+scenegraph_type = "swin"
+# Definiamo la chiave con cui salvare l'output nel contesto per il prossimo step
+output_key = "sfm_ready_path"
+primary_output = "model_dir"
+
+
+[[steps]]
+name = "Training"
+method = "methods/splat/fastgs.toml"
+[steps.inputs]
+#{StepName}_{output_name}
+source_path = "{{context.StructureFromMotion_model_dir}}"
+[steps.kwargs]
+iterations = 15000
