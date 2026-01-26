@@ -1,6 +1,7 @@
 title = "Mast3r SFM"
 description = "MAST3R: Multi-view Attention for Strategy-free Tracking and 3D Reconstruction."
 url = "https://github.com/naver/mast3r_sfm"
+type = "sfm"
 
 [environment]
 python_version = "3.11"
@@ -13,28 +14,11 @@ channels = ["pytorch", "nvidia", "conda-forge"]
 
 dependencies = [
     "ffmpeg",
-    # Compilatori necessari per ASMK e Cython
     "gxx_linux-64=11.*", 
     "make",
     "cmake",
     "gcc_linux-64=11.*",
     "glomap",
-
-    # "eigen",
-    # "ceres-solver>=2.1.0",
-    # "glog",
-    # "gflags",
-    # "boost",
-    # "suitesparse",
-    # "flann",
-    # "freeimage", # Spesso opzionale o inclusa, controlliamo se serve
-    # "glew",
-    # "metis",
-    # "mesa-libgl-devel-cos7-x86_64",
-    # "mesa-libglu-devel-cos7-x86_64",
-    # "cgal",
-    # "cuda-toolkit=12.1", # Fornisce header come curand_kernel.h necessari per la compilazione CUDA
-    # "ninja",
 ]
 
 pip_dependencies = [
@@ -46,28 +30,20 @@ build_commands = [
     "pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu118",
     "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
 
-
-    # 1. Installa le dipendenze Python definite nel repository
-    # Pixi eseguirà questo comando all'interno dell'ambiente attivato
     "pip install -r {{method_vendor_dir}}/mast3r/requirements.txt",
 
-    # 2. (Opzionale) Se sai che ci sono altri file requirements in sottomoduli (es. dust3r), aggiungili qui:
     "pip install -r {{method_vendor_dir}}/mast3r/dust3r/requirements.txt",
     "pip install -r {{method_vendor_dir}}/mast3r/dust3r/requirements_optional.txt",
 
     "bash -c 'cd {{method_vendor_dir}}/asmk/cython && cythonize *.pyx'",
     "bash -c 'cd {{method_vendor_dir}}/asmk && python setup.py build_ext --inplace'",
     "pip install 'numpy<2.0.0'",
-
-    # "bash -c 'export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CONDA_PREFIX/include:$CPATH && cd {{method_vendor_dir}}/glomap && mkdir -p build && cd build && cmake .. -GNinja -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_CUDA_ARCHITECTURES=\"90;89;86;80;75;70;61\" && ninja && ninja install'",
 ]
 
 post_install_commands = [
-    # Eventuali comandi da eseguire dopo l'installazione
     "cp {{project_root}}/helper_scripts/mast3r_glomap_cli.py {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py"
 ]
 
-# Clona il repository Mast3r (branch mast3r_sfm)
 [[installation.git_repos]]
 url = "https://github.com/naver/mast3r.git"
 branch = "mast3r_sfm"
@@ -80,11 +56,6 @@ branch = "master"
 path = "asmk"
 recursive = true
 
-# [[installation.git_repos]]
-# url = "https://github.com/colmap/glomap.git"
-# branch = "main" 
-# path = "glomap"
-# recursive = true
 
 [validation]
 validation_command = """

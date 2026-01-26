@@ -1,6 +1,7 @@
 title = "FastGS"
 description = "Training 3D Gaussian Splatting in 100 Seconds."
 url = "https://github.com/fastgs/FastGS"
+type = "gaussian_splatting"
 
 [environment]
 python_version = "3.10"
@@ -50,13 +51,32 @@ recursive = true
 validation_command = "python -c 'import sys; sys.path.append(\"vendor/fastgs\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_gaussian_rasterization_fastgs; print(\"   diff_gaussian_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); import fused_ssim; print(\" fused_ssim OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
 
 [execution]
-command = "python {{method_vendor_dir}}/fastgs/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/fastgs/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+command = """
+python {{method_vendor_dir}}/fastgs/convert.py -s {{inputs.source_path}} --skip_matching &&
+python {{method_vendor_dir}}/fastgs/train.py \
+-s {{inputs.source_path}} \
+--model_path {{outputs.trained_model_dir}} \
+--iterations {{kwargs.iterations}} \
+--densify_grad_threshold {{kwargs.densify_grad_threshold}} \
+--grad_abs_thresh {{kwargs.grad_abs_thresh}} \
+--grad_thresh {{kwargs.grad_thresh}} \
+--opacity_reset_interval {{kwargs.opacity_reset_interval}} \
+--lambda_dssim {{kwargs.lambda_dsssim}} \
+--dense {{kwargs.dense}} \
+--position_lr_final {{kwargs.position_lr_final}} \
+--shfeature_lr {{kwargs.shfeature_lr}} \
+--feature_lr {{kwargs.feature_lr}} \
+--loss_thresh {{kwargs.loss_thresh}} \
+--data_device cpu
+"""
 
 [execution.inputs]
 expected_input_images_folder = "input"
 expected_colmap_folder = "distorted/sparse/0"
 expected_db_folder = "distorted"
 
+[execution.help]
+help_command = "python {{method_vendor_dir}}/fastgs/train.py --help"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

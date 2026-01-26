@@ -1,6 +1,7 @@
 title = "Sharp Frames"
 description = "Python tool to extract sharp frames from videos or image directories."
 url = "https://github.com/Reflct/sharp-frames-python"
+type = "preprocess"
 
 [environment]
 python_version = "3.11"

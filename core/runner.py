@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 from .context import PipelineContext
 from .components.base import MethodRunner
-# from .installer import MethodInstaller # Opzionale se vuoi auto-installare
 from .post_processing import filter_ply_by_opacity
 
 class PipelineRunner:
@@ -46,7 +45,7 @@ class PipelineRunner:
             
             method_path = (self.base_path / method_rel_path).resolve()
             if not method_path.exists():
-                 # Fallback per path relativi a methods/
+                 # Fallback
                  method_path = (self.base_path / "methods" / method_rel_path).resolve()
 
             print(f"\n--- Output Step [{step_name}] ({method_path.stem}) ---")
@@ -56,36 +55,34 @@ class PipelineRunner:
 
             env_path = self.envs_base_dir / method_path.stem
 
-            # Check esistenza env
+            # Check .env presence
             if not (env_path / "pixi.toml").exists():
                  print(f"Errore: Ambiente {method_path.stem} non installato.")
                  raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
 
-            # 1. Risoluzione Inputs: pipeline toml -> valori reali
+            # Resolving inputs from TOML
             step_inputs = {}
             
-            # Carica default dal TOML del metodo (es. parametri di adattamento folder)
             method_defaults = method_config.get("execution", {}).get("inputs", {})
             for key, val in method_defaults.items():
                 step_inputs[key] = self.context.resolve(val)
 
             raw_inputs = step_config.get("inputs", {})
             for key, val in raw_inputs.items():
-                # Risolve es. "{{context.input_file}}"
+                # Resolve ex. "{{context.input_file}}"
                 step_inputs[key] = self.context.resolve(val)
             
-            # Adatta la struttura della cartella di input se richiesto dal metodo (es. Taming 3DGS)
             self._adapt_input_structure(step_inputs)
                 
-            # Gestione Kwargs con risoluzione e overrides
+            # Kwargs override
             raw_kwargs = step_config.get("kwargs", {})
             step_kwargs = {}
             
             for k, v in raw_kwargs.items():
-                # Risolvi variabili nel TOML se sono stringhe (es. "{{context.iterations}}")
+                # Resolve TOML String variables (es. "{{context.iterations}}")
                 step_kwargs[k] = self.context.resolve(v) if isinstance(v, str) else v
             
-            # Applica overrides specifici per step (es. "Training.iterations")
+            # overrides for step (es. "Training.iterations")
             prefix = f"{step_name}."
             for ov_key, ov_val in self.overrides.items():
                 if ov_key.startswith(prefix):
@@ -93,14 +90,39 @@ class PipelineRunner:
                     step_kwargs[param_name] = ov_val
                     print(f"   [Override] {step_name}.{param_name} = {ov_val}")
             
-            # 2. Setup Directory e Runner
+            # Setup Directory and Runner
             step_output_dir = self.context.get_output_dir() / step_name
             step_output_dir.mkdir(parents=True, exist_ok=True)
             
             runner = MethodRunner(method_config, env_path, self.base_path)
             
-            # 3. Esecuzione (MethodRunner usa Inputs reali per comporre il comando)
+            # Execution
             outputs = runner.run(step_inputs, step_kwargs, step_output_dir)
+            
+            #Locate the final PLY file and put it in the root of the project
+            search_dirs = {step_output_dir}
+            for val in outputs.values():                    
+                if isinstance(val, (str, Path)):
+                    p = Path(val)
+                    if p.exists() and p.is_dir():
+                        search_dirs.add(p)
+            target_ply = None
+            highest_num = -1
+            
+            for sd in search_dirs:
+                subdirs = [sd / "point_cloud", sd / "ply"]
+                for subdir in subdirs:
+                    if subdir.exists() and subdir.is_dir():
+                        candidates = list(subdir.rglob("*.ply"))
+                        for c in candidates:
+                            #To avoid temp files
+                            if "_filtered" in c.name:
+                                continue
+                            nums = re.findall(r"\d+", c.stem)
+                            current_num = int(nums[-1]) if nums else 0
+                            if target_ply is None or current_num > highest_num:
+                                target_ply = c
+                                highest_num = current_num
             
             #Global Post-Processing: Opacity Filter
             global_opts = self.config.get("global_options", {})
@@ -110,59 +132,82 @@ class PipelineRunner:
                 # Check on .PLY
                 # TODO : Magari da generalizzare, ma per ora supporta formati gsplat e formati gaussian_spatting di graphdeco-inria
                 # TODO: Estrarre dalla logica del post processing per copiare l'output finale in una cartella nella root del progetto
-                search_dirs = {step_output_dir}
-                for val in outputs.values():                    
-                    if isinstance(val, (str, Path)):
-                        p = Path(val)
-                        if p.exists() and p.is_dir():
-                            search_dirs.add(p)
-                target_ply = None
-                highest_num = -1
+                # search_dirs = {step_output_dir}
+                # for val in outputs.values():                    
+                #     if isinstance(val, (str, Path)):
+                #         p = Path(val)
+                #         if p.exists() and p.is_dir():
+                #             search_dirs.add(p)
+                # target_ply = None
+                # highest_num = -1
                 
-                for sd in search_dirs:
-                    subdirs = [sd / "point_cloud", sd / "ply"]
-                    for subdir in subdirs:
-                        if subdir.exists() and subdir.is_dir():
-                            candidates = list(subdir.rglob("*.ply"))
-                            for c in candidates:
-                                #To avoid temp files
-                                if "_filtered" in c.name:
-                                    continue
-                                nums = re.findall(r"\d+", c.stem)
-                                current_num = int(nums[-1]) if nums else 0
-                                if target_ply is None or current_num > highest_num:
-                                    target_ply = c
-                                    highest_num = current_num
+                # for sd in search_dirs:
+                #     subdirs = [sd / "point_cloud", sd / "ply"]
+                #     for subdir in subdirs:
+                #         if subdir.exists() and subdir.is_dir():
+                #             candidates = list(subdir.rglob("*.ply"))
+                #             for c in candidates:
+                #                 #To avoid temp files
+                #                 if "_filtered" in c.name:
+                #                     continue
+                #                 nums = re.findall(r"\d+", c.stem)
+                #                 current_num = int(nums[-1]) if nums else 0
+                #                 if target_ply is None or current_num > highest_num:
+                #                     target_ply = c
+                #                     highest_num = current_num
                                     
                 if target_ply:
                     print(f"[Auto-Filter] Selected PLY: '{target_ply.name}' (Iteration: {highest_num})")
-                    filtered_path = target_ply.parent / f"{target_ply.stem}_filtered{target_ply.suffix}.ply"
-                    filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold))
-                    
-                    updated_existing = False
-                    for key, val in outputs.items():
-                        if isinstance(val, (str, Path)):
-                            outputs[key] = filtered_path
-                            updated_existing = True
+                    filtered_path = target_ply.parent / f"{target_ply.stem}_filtered{target_ply.suffix}"
+                    try:
+                        filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold))
+                        
+                        updated_existing = False
+                        for key, val in outputs.items():
+                            if isinstance(val, (str, Path)):
+                                outputs[key] = filtered_path
+                                updated_existing = True
+                                
+                        if not updated_existing:
+                            outputs["filtered_ply"] = filtered_path
                             
-                    if not updated_existing:
-                        outputs["filtered_ply"] = filtered_path
+                        if target_ply:
+                            #Copy filtered_ply in output_dir
+                            dest_path = self.context.get_output_dir() / "final_result" / "final_gaussian.ply"
+                            dest_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(filtered_path, dest_path)
+                            print(f"[Output] Copied final PLY to '{dest_path.name}'")
+                    except Exception as e:
+                        print(f"   [Auto-Filter] Error filtering PLY: {e}")
+                        if target_ply:
+                            #Copy target_ply in output_dir
+                            dest_path = self.context.get_output_dir() / "final_result" / target_ply.name
+                            dest_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(target_ply, dest_path)
+                            print(f"[Output] Copied final PLY to '{dest_path.name}'")
+
+            else:
+                if target_ply:
+                    #Copy target_ply in output_dir
+                    dest_path = self.context.get_output_dir() / "final_result" / target_ply.name
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(target_ply, dest_path)
+                    print(f"[Output] Copied final PLY to '{dest_path.name}'")
+
             
             # Save completion status
             self._save_step_completion(step_name, outputs)
 
-        # 4. Registrazione Output nel Contesto
-        # Li salviamo come "NomeStep_NomeOutput" (es. Extraction_images_dir)
+        # Output Registration in Context
+        # Format "StepName_OutputName" (es. Extraction_images_dir)
         for key, val in outputs.items():
             global_key = f"{step_name}_{key}"
             self.context.set(global_key, val)
         
-        # Supporto alias espliciti (output_key legacy o primary_output)
         pipeline_mapping_key = step_config.get("output_key")
         primary_out_key = step_config.get("primary_output")
         
         if pipeline_mapping_key:
-             # Cerchiamo di capire qual è l'output principale
              val_to_save = None
              if primary_out_key and primary_out_key in outputs:
                  val_to_save = outputs[primary_out_key]
@@ -175,8 +220,7 @@ class PipelineRunner:
 
     def _adapt_input_structure(self, inputs: Dict[str, Any]):
         """
-        Controlla se sono richiesti path specifici per l'input e riorganizza 
-        la cartella source_path di conseguenza (es. creando symlink 'input' o copiando 'distorted').
+        Check for specific required folder structures from the TOML recipe
         """
         source_path_str = inputs.get("source_path")
         if not source_path_str:
@@ -186,7 +230,7 @@ class PipelineRunner:
         if not source_path.exists():
             return
 
-        # 1. Gestione Immagini (es. expected_input_images_folder="input")
+        # Images Folder
         target_images_name = inputs.get("expected_input_images_folder")
         if target_images_name:
             target_img = source_path / target_images_name
@@ -203,7 +247,7 @@ class PipelineRunner:
                     except Exception as e:
                         print(f"   [Auto-Adapt] Error linking images: {e}")
 
-        # 2. Gestione Sparse Model (es. expected_colmap_folder="distorted/sparse/0")
+        # Sparse Model Folder
         target_colmap_rel = inputs.get("expected_colmap_folder")
         if target_colmap_rel:
             target_colmap = source_path / target_colmap_rel
@@ -217,7 +261,7 @@ class PipelineRunner:
                     except Exception as e:
                         print(f"   [Auto-Adapt] Error copying sparse model: {e}")
 
-        # 3. Gestione Database (es. expected_db_folder="distorted")
+        # COLMAP DB folder
         target_db_folder_rel = inputs.get("expected_db_folder")
         if target_db_folder_rel:
             target_db = source_path / target_db_folder_rel / "database.db"
@@ -264,13 +308,13 @@ class PipelineRunner:
             print(f"[WARN] Could not save status file: {e}")
 
     def print_help(self):
-        """Stampa i parametri configurabili della pipeline."""
+        """Print all the configurable parameter of the method"""
         print(f"\n=== Pipeline: {self.config.get('title', 'Untitled')} ===")
         desc = self.config.get('description', '').strip()
         if desc:
             print(f"{desc}\n")
         
-        print("--- 1. Context Variables (use --set VAR=VAL) ---")
+        print("Context Variables (use --set VAR=VAL)")
         context_vars = set()
         
         def scan_val(v):
@@ -302,7 +346,7 @@ class PipelineRunner:
         else:
             print("  (No explicit context variables detected)")
 
-        print("\n--- 2. Step Parameters (use --set StepName.Param=VAL) ---")
+        print("\nStep Parameters (use --set StepName.Param=VAL)")
         for i, step in enumerate(steps):
             step_name = step.get("name", f"Step_{i}")
             kwargs = step.get("kwargs", {})

@@ -4,6 +4,9 @@ import tomli
 from pathlib import Path
 from typing_extensions import Annotated
 from typing import List, Optional
+import subprocess
+import os
+import shlex
 
 # Importiamo le nuove classi aggiornate per Pixi
 from core.runner import PipelineRunner
@@ -13,7 +16,7 @@ from core.installer import MethodInstaller
 # possiamo gestirlo direttamente qui o aggiornare la classe se esiste.
 # Per semplicità lo gestiamo qui o assumiamo una classe compatibile.
 from core.validation import Validator
-from core.utils import setup_logging
+from core.utils import setup_logging, get_or_download_pixi
 
 # --- Setup App ---
 app = typer.Typer(help="Pipeline 3D modulare con ambienti locali Pixi.")
@@ -198,7 +201,6 @@ def uninstall_method(
             if dir:
                 vendor_dirs.append(VENDOR_DIR / dir)
             
-
     except:
         # Fallback: prova a usare il method_name direttamente se il file non si trova
         env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
@@ -288,6 +290,46 @@ def list_methods():
             
         if meta_info:
             typer.secho(f"   └── {', '.join(meta_info)}", fg=typer.colors.BRIGHT_BLACK)
+            
+@methods_app.command("help")
+def list_arguments(
+    method_name: Annotated[
+        str, typer.Argument(help="Nome del metodo da consultare.")
+    ]
+):
+    """Elenca i parametri di uno script specificato nel TOML"""
+    try:
+        method_path = _find_manifest(method_name)
+        with open(method_path, "rb") as f:
+            cfg = tomli.load(f)
+        env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
+        env_path = ENVS_DIR / env_name
+        
+        if not(env_path / "pixi.toml").exists():
+            typer.secho(f"Environment '{env_name}' not found. First esecute the install command", fg=typer.colors.RED)
+            return
+        
+        help_section = cfg.get("execution", {}).get("help", {})
+        help_command = help_section.get("help_command") if help_section else None
+        
+        if not help_command:
+            typer.secho("No help_command found in the specified TOML", fg=typer.colors.YELLOW)
+            
+        vendor_str = str(VENDOR_DIR).replace("\\", "/")
+        root_str = str(PROJECT_ROOT).replace("\\", "/")
+        cmd_str = help_command.replace("{{method_vendor_dir}}", vendor_str)
+        cmd_str = cmd_str.replace("{{project_root}}", root_str)
+        
+        pixi_exe = get_or_download_pixi(PROJECT_ROOT)
+        args = shlex.split(cmd_str, posix=os.name != "nt")
+        full_cmd = [str(pixi_exe), "run", "--manifest-path", str(env_path / "pixi.toml")] + args
+        
+        typer.secho(f"Executing: {cmd_str}\n", fg=typer.colors.CYAN)
+        subprocess.check_call(full_cmd, cwd=PROJECT_ROOT)
+            
+    except Exception as e:
+        print(f"[ERROR] Cannota invoke --help parameter on specified script: {e}")
+
 
 
 if __name__ == "__main__":

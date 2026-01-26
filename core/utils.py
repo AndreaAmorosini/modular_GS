@@ -19,7 +19,7 @@ except ImportError:
 
 def get_or_download_pixi(base_dir: Path) -> Path:
     """
-    Scarica pixi standalone in base_dir/bin/pixi se non esiste.
+    Check for pixi bin presence otherwise automatic download
     """
     bin_dir = base_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -30,7 +30,7 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     if pixi_exe.exists():
         return pixi_exe.resolve()
 
-    print(f"[SYSTEM] Pixi non trovato. Download in corso...")
+    print(f"[SYSTEM] Pixi not found. Downloading...")
 
     system = platform.system().lower()  # linux, darwin, windows
     machine = platform.machine().lower()  # x86_64, arm64
@@ -79,14 +79,13 @@ def get_or_download_pixi(base_dir: Path) -> Path:
 
 
 def setup_logging(level=logging.INFO):
-    """Configura il logger di radice."""
+    """Logger Setup"""
     logging.basicConfig(
         level=level,
         format="[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout,
     )
-    # Silenzia i log troppo verbosi di altre librerie
     logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
@@ -101,19 +100,19 @@ def run_command(
     env=None,
 ):
     """
-    Esegue un comando di subprocess, gestendo logging, verbosità e retry.
+    Execute subprocess commands.
     """
     logger = logging.getLogger(log_name)
     cmd_str = command if isinstance(command, str) else " ".join(command)
-    logger.info(f"Avvio comando: {command}")
+    logger.info(f"Executing Command: {command}")
     if verbose:
-        logger.info(f"Comando completo: {cmd_str}")
+        logger.info(f"Full Command: {cmd_str}")
 
     for attempt in range(1, retry_limit + 1):
         try:
-            # Se verbose=True, stampa l'output in tempo reale
+            # If verbose=True, print output in real time
             if verbose:
-                # Usiamo Popen per lo streaming live
+                # Popen for live streaming
                 process = subprocess.Popen(
                     command,
                     stdout=subprocess.PIPE,
@@ -128,7 +127,6 @@ def run_command(
                 )
 
                 logger.info("--- Inizio output comando (verbose) ---")
-                # Leggi e stampa l'output riga per riga
                 for line in iter(process.stdout.readline, ""):
                     if line:
                         logger.debug(f"[CMD] {line.strip()}")
@@ -138,7 +136,7 @@ def run_command(
                 logger.info("--- Fine output comando ---")
 
             else:
-                # Se verbose=False, cattura tutto alla fine
+                # If verbose=False, take everything at the end of the process
                 result = subprocess.run(
                     command,
                     capture_output=True,
@@ -151,14 +149,14 @@ def run_command(
                 )
                 returncode = result.returncode
                 if returncode != 0:
-                    # Stampa solo in caso di errore
+                    # Only if in exception
                     logger.warning(f"Output (stdout): {result.stdout.strip()}")
                     logger.error(f"Errore (stderr): {result.stderr.strip()}")
 
-            # Controllo finale
+            # Final check
             if returncode == 0:
                 logger.info("Comando completato con successo.")
-                return  # Esce dal loop
+                return
             else:
                 raise subprocess.CalledProcessError(returncode, cmd_str)
 
@@ -169,24 +167,22 @@ def run_command(
                 time.sleep(retry_cooldown)
             else:
                 logger.critical(f"Comando fallito dopo {retry_limit} tentativi.")
-                raise  # Solleva l'eccezione
+                raise
 
 
 class RerunVisualizer:
     """
-    Singleton per gestire l'istanza di Rerun.
-    (Implementa la richiesta "visualizzazione step intermedi")
+    Singleton for managinfg Rerun instances.
     """
 
     _instance = None
 
     @staticmethod
     def get_instance():
-        """Ottiene l'istanza singleton, creandola se necessario."""
         if RerunVisualizer._instance is None:
             if rr is None:
                 logging.warning(
-                    "Modulo 'rerun' non trovato. Visualizzazione disabilitata."
+                    "Module 'rerun' not found."
                 )
                 RerunVisualizer._instance = RerunVisualizer(enabled=False)
             else:
@@ -199,17 +195,17 @@ class RerunVisualizer:
             try:
                 # "spawn()" avvia il visualizzatore Rerun in un processo separato
                 rr.init("full_pipe_v2", spawn=True)
-                logging.info("Visualizzatore Rerun avviato. Connettiti all'app.")
+                logging.info("Rerun visualizer OK. Connect to visualize.")
             except Exception as e:
-                logging.error(f"Impossibile avviare Rerun: {e}")
+                logging.error(f"Error while running Rerun: {e}")
                 self.enabled = False
 
     def log_sfm_results(self, recon_path: Path):
-        """Carica un modello sparse COLMAP e lo logga su Rerun."""
+        """Load a COLMAP model and log on Rerun."""
         if not self.enabled or not recon_path.exists():
             return
 
-        logging.info(f"Invio risultati SfM a Rerun da {recon_path}...")
+        logging.info(f"Sending SFM results to Rerun:{recon_path}...")
         try:
             # Per una visualizzazione reale, avresti bisogno di pycolmap
             # import pycolmap
@@ -220,10 +216,10 @@ class RerunVisualizer:
             # Per ora, logghiamo un placeholder
             rr.log(
                 "sfm/info",
-                rr.TextDocument(f"Risultati SfM caricati da: {recon_path}"),
+                rr.TextDocument(f"SFM Results from: {recon_path}"),
                 timeless=True,
             )
             logging.info("Risultati SfM inviati (simulato).")
 
         except Exception as e:
-            logging.warning(f"Visualizzazione Rerun (SfM) fallita: {e}")
+            logging.warning(f"Rerun visualization for SFM failed: {e}")

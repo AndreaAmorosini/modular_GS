@@ -1,6 +1,8 @@
 title = "GSplat"
 description = "Implementazione CUDA ultra-veloce di Gaussian Splatting sviluppata da Nerfstudio."
 url = "https://github.com/nerfstudio-project/gsplat"
+type = "gaussian_splatting"
+
 
 [environment]
 python_version = "3.10"
@@ -15,18 +17,18 @@ dependencies = [
     "gcc_linux-64",
     "make",
     "cmake",
-    "ninja",       # Essenziale per la compilazione JIT dei kernel CUDA di gsplat
-    "cuda-toolkit" # Richiesto per i file header CUDA durante la compilazione
+    "ninja",
+    "cuda-toolkit"
 ]
 
 pip_dependencies = [
     "numpy<2.0.0",
     "tqdm",
     "typing_extensions",
-    "tyro",        # CLI parser usato negli esempi di gsplat
+    "tyro",
     "imageio",
     "scikit-learn",
-    "lpips",       # Per le metriche di training
+    "lpips",
     "matplotlib",
     "tensorboard",
 ]
@@ -48,15 +50,15 @@ recursive = true
 validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat.__version__}\"); import torch; print(f\"CUDA Available: {torch.cuda.is_available()}\")'"
 
 [execution]
-# Utilizza lo script di esempio 'simple_trainer.py' incluso nel repository.
-# --disable_viewer: disabilita il visualizzatore interattivo per il training headless (batch)
-command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py default --data-dir {{inputs.source_path}} --result-dir {{outputs.trained_model_dir}} --data-factor 1 --disable-viewer --save-ply --max-steps {{kwargs.get('iterations', 30000)}}"
+command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py mcmc --data-dir {{inputs.source_path}} --result-dir {{outputs.trained_model_dir}} --data-factor 1 --disable-viewer --save-ply --max-steps {{kwargs.get('iterations', 30000)}}"
 
 [execution.inputs]
 expected_input_images_folder = "images"
 expected_colmap_folder = "sparse/0"
 expected_db_folder = "."
 
+[execution.help]
+help_command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py --help"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

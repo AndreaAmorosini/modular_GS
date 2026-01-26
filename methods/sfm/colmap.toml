@@ -1,6 +1,7 @@
 title = "COLMAP"
 description = "General-purpose Structure-from-Motion (SfM) and Multi-View Stereo (MVS) pipeline."
 url = "https://colmap.github.io/"
+type = "sfm"
 
 [environment]
 python_version = "3.10"

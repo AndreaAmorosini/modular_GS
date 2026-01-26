@@ -39,12 +39,12 @@ def filter_ply_by_opacity(
 
     opacities = vertex.data["opacity"]
 
-    # Euristica: Rileva se le opacità sono Logit (possono essere <0 o >1) o Attivate [0,1]
+    # Check if it is Logit (<0 or >1) or  [0,1]
     is_logit = (opacities.min() < 0.0) or (opacities.max() > 1.0)
 
     real_threshold = threshold
     if is_logit:
-        # Conversione soglia da [0,1] a logit: logit(x) = log(x / (1 - x))
+        # Conversion from [0,1] to logit: logit(x) = log(x / (1 - x))
         t = np.clip(threshold, 1e-6, 1.0 - 1e-6)
         real_threshold = np.log(t / (1 - t))
         if verbose:
@@ -62,7 +62,6 @@ def filter_ply_by_opacity(
 
     new_element = PlyElement.describe(new_data, "vertex")
 
-    # Scrittura del nuovo file
     PlyData([new_element], text=plydata.text).write(output_path)
 
     if verbose:

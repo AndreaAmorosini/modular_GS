@@ -17,7 +17,6 @@ class MethodInstaller:
         self.base_path = base_path
         self.pixi_exe = get_or_download_pixi(self.base_path)
 
-        # Percorsi chiave per i template
         self.vendor_dir = self.base_path / "vendor"
         self.project_root = self.base_path
 
@@ -25,7 +24,7 @@ class MethodInstaller:
         env_path.mkdir(parents=True, exist_ok=True)
 
         # --- CACHING CHECK ---
-        # Se esiste questo file, assumiamo che l'installazione sia completa.
+        # If the file exist the installation should have already completed
         sentinel_file = env_path / ".install_complete"
         if sentinel_file.exists():
             print(
@@ -35,43 +34,61 @@ class MethodInstaller:
 
         print(f"--- Configuring Environment in {env_path} ---")
 
-        # 1. Genera e Scrivi pixi.toml
-        pixi_data = self._generate_pixi_structure()
-        toml_path = env_path / "pixi.toml"
-        with open(toml_path, "wb") as f:
-            tomli_w.dump(pixi_data, f)
-        print(f"Configuration generated at {toml_path}")
-
-        # 2. Pixi Install (Dipendenze binarie e Python base)
-        print("--- Running Pixi Install ---")
         try:
-            subprocess.check_call(
-                [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
-            )
-        except subprocess.CalledProcessError:
-            print("!!! Installation Failed !!!")
+            # Generate and write pixi.toml
+            pixi_data = self._generate_pixi_structure()
+            toml_path = env_path / "pixi.toml"
+            with open(toml_path, "wb") as f:
+                tomli_w.dump(pixi_data, f)
+            print(f"Configuration generated at {toml_path}")
+
+            # 2. Pixi Install (Dipendenze binarie e Python base)
+            print("--- Running Pixi Install ---")
+            try:
+                subprocess.check_call(
+                    [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
+                )
+            except subprocess.CalledProcessError:
+                print("!!! Installation Failed !!!")
+                raise
+
+            # 3. Gestione Git Repositories (Scarica sorgenti in vendor/)
+            cloned_path =self._clone_repositories()
+
+            # 4. Build Commands (Compilazioni e installazioni complesse dentro l'env)
+            build_cmds = self.config.get("installation", {}).get("build_commands", [])
+            if build_cmds:
+                print("--- Running Build Commands ---")
+                self._run_env_commands(build_cmds, env_path)
+
+            # 5. Post Install Commands (Setup finali)
+            post_cmds = self.config.get("installation", {}).get("post_install_commands", [])
+            if post_cmds:
+                print("--- Running Post-Install Commands ---")
+                self._run_env_commands(post_cmds, env_path)
+
+            # Segna l'installazione come completata con successo
+            sentinel_file.touch()
+            print("--- Installation Complete ---")
+        except Exception as e:
+            print(f"!!! Installation Failed: {e} !!!")
+            #Remove .env and vendor dir
+            print("Cleaning up...")
+            shutil.rmtree(env_path)
+            if cloned_path:
+                shutil.rmtree(cloned_path)
             raise
 
-        # 3. Gestione Git Repositories (Scarica sorgenti in vendor/)
-        self._clone_repositories()
-
-        # 4. Build Commands (Compilazioni e installazioni complesse dentro l'env)
-        build_cmds = self.config.get("installation", {}).get("build_commands", [])
-        if build_cmds:
-            print("--- Running Build Commands ---")
-            self._run_env_commands(build_cmds, env_path)
-
-        # 5. Post Install Commands (Setup finali)
-        post_cmds = self.config.get("installation", {}).get("post_install_commands", [])
-        if post_cmds:
-            print("--- Running Post-Install Commands ---")
-            self._run_env_commands(post_cmds, env_path)
-
-        # Segna l'installazione come completata con successo
-        sentinel_file.touch()
-        print("--- Installation Complete ---")
+        
 
     def _generate_pixi_structure(self) -> Dict:
+        type = self.config.get("type", "")
+        if type == "":
+            print("[ERROR] No Type specified in the TOML specify one of the following (preprocess, sfm, gaussian_splatting, post_processing)")
+            raise ValueError("No Type specified")
+        
+        #TODO: Setting di librerie base in base al tipo di tool
+        
         install_cfg = self.config.get("installation", {})
         env_cfg = self.config.get("environment", {})
 
@@ -102,6 +119,11 @@ class MethodInstaller:
         # Dipendenze Conda
         has_pytorch_cuda = False
         has_cuda_toolkit = False
+        
+        #Check on type to inject necessaries libraries for building or other
+        #Check if build command is not empty
+        # Check for pip commands with paths
+        # Inject --no-build-isolation
         
         for dep in install_cfg.get("dependencies", []):
             n, v = self._parse_dep(dep)
@@ -138,13 +160,6 @@ class MethodInstaller:
             }
         )
         
-        # if not has_cuda_toolkit:
-        #     pixi["dependencies"]["cuda-toolkit"] = f"{cuda_ver_raw}.*"
-        
-        # # Aggiungi pytorch-cuda SOLO se non già specificato dall'utente
-        # if not has_pytorch_cuda:
-        #     pixi["dependencies"]["pytorch-cuda"] = f"{cuda_ver_raw}.*"
-
         # Dipendenze PIP e Wheels Remoti
         base_wheel_url = install_cfg.get("wheels_base_url")
         available_wheels = []
@@ -215,18 +230,17 @@ class MethodInstaller:
                 cmd.append("--recursive")
 
             subprocess.check_call(cmd)
+            return target_path
 
     def _run_env_commands(self, commands: List[str], env_path: Path):
         """Esegue comandi shell all'interno dell'ambiente Pixi."""
         
-        #Variabili d'ambiente dal TOML
         env_cfg = self.config.get("environment", {})
         custom_env = os.environ.copy()
         custom_env["CUDA_HOME"] = str(env_path.resolve())
         
         pixi_env_prefix = env_path / ".pixi" / "envs" / "default"
         
-        # Se la cartella esiste, usala come root per CUDA e compilatori
         if pixi_env_prefix.exists():
             custom_env["CUDA_HOME"] = str(pixi_env_prefix.resolve())
             
@@ -253,7 +267,7 @@ class MethodInstaller:
             custom_env["LD_LIBRARY_PATH"] = f"{lib_dir}:{custom_env.get('LD_LIBRARY_PATH', '')}"
             custom_env["PATH"] = f"{bin_dir}:{custom_env.get('PATH', '')}"            
         else:
-            # Fallback se la struttura è diversa (ma con Pixi standard è sempre questa)
+            # Fallback
             custom_env["CUDA_HOME"] = str(env_path.resolve())
             
                     
@@ -265,10 +279,9 @@ class MethodInstaller:
             cmd_str = self._resolve_template(cmd_template)
             print(f"Running: {cmd_str}")
 
-            # Parsing argomenti (gestisce bene spazi e quote)
+            # Parsing arguments
             args = shlex.split(cmd_str, posix=os.name != "nt")
 
-            # Esegue tramite `pixi run` usando il manifest dell'environment
             full_cmd = [
                 str(self.pixi_exe),
                 "run",
@@ -276,7 +289,6 @@ class MethodInstaller:
                 str(env_path / "pixi.toml"),
             ] + args
 
-            # Eseguiamo dalla root del progetto per path relativi coerenti
             try:
                 subprocess.check_call(full_cmd, cwd=self.base_path, env=custom_env)
             except subprocess.CalledProcessError as e:
@@ -292,7 +304,7 @@ class MethodInstaller:
         text = text.replace("{{project_root}}", root_str)
         return text
 
-    # --- Utilities per ricerca file remoti (Invariate) ---
+    #Utilities per ricerca file remoti
     def _fetch_remote_file_list(self, base_url: str, subdir: str) -> List[str]:
         if "huggingface.co" in base_url:
             return self._fetch_hf_api_list(base_url, subdir)
@@ -360,8 +372,6 @@ class MethodInstaller:
             
             return name, raw_ver
         return s, "*"
-
-        # return s.split("=", 1) if "=" in s else (s, "*")
 
     def _parse_pypi_dep(self, s):
         match = re.match(r"^([a-zA-Z0-9_\-\.\[\]]+)\s*([<>=!~]+.*)$", s)

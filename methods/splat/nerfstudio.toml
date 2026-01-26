@@ -1,6 +1,9 @@
 title = "Nerfstudio"
 description = "State-of-the-art framework for NeRF and Splatting training."
 url = "https://github.com/nerfstudio-project/nerfstudio"
+type = "gaussian_splatting"
+
+
 
 [environment]
 python_version = "3.10"

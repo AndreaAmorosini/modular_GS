@@ -19,29 +19,29 @@ class Validator:
 
     def _load_method_registry(self) -> Dict[str, Any]:
         """
-        Scansiona 'methods/' e carica tutti i .toml.
-        Usa il nome del file (senza estensione) come ID univoco del metodo.
+        Scans 'methods/' and load all of the .toml files.
+        Uses the name of the file as the unique ID of the method.
         """
         registry = {}
         if not self.methods_dir.is_dir():
-            raise FileNotFoundError(f"Directory metodi non trovata: {self.methods_dir}")
+            raise FileNotFoundError(f"Methods Directory not found: {self.methods_dir}")
 
         for toml_file in self.methods_dir.glob("**/*.toml"):
             try:
                 config = toml.load(toml_file)
-                # L'ID è il nome del file (es. 'nerfstudio' da 'nerfstudio.toml')
-                # Questo deve corrispondere al nome della cartella in .envs/
+                # the ID is the name of the TOML file (without extension)
+                # This must match the name in .envs/
                 method_id = toml_file.stem
                 config["__id__"] = method_id
                 config["__path__"] = toml_file
                 
-                # Fallback per title se non esiste
+                # Fallback for title if not present
                 if "title" not in config:
                     config["title"] = method_id
 
                 registry[method_id] = config
             except Exception as e:
-                logging.warning(f"Impossibile caricare {toml_file}: {e}")
+                logging.warning(f"Failed to load: {toml_file}: {e}")
         return registry
 
     def find_method_config(self, method_id: str) -> Optional[Dict[str, Any]]:
@@ -49,39 +49,39 @@ class Validator:
 
     def validate_method(self, method_id: str, verbose: bool = False) -> bool:
         """
-        Esegue il comando di validazione definito nel TOML usando 'pixi run'.
+        Execute the validation command specified in the TOML using 'pixi run'.
         """
         config = self.registry.get(method_id)
         if not config:
-            typer.secho(f"Metodo '{method_id}' non trovato nel registro.", fg=typer.colors.RED)
+            typer.secho(f"Method '{method_id}' not found.", fg=typer.colors.RED)
             return False
 
-        # 1. Recupera il comando dal TOML
+        # Take the command from the TOML
         validation_section = config.get("validation", {})
         cmd_str = validation_section.get("validation_command")
         
         if not cmd_str:
-            # Se non c'è una sezione validation, consideriamo OK se l'ambiente esiste
+            # If no validation command is specified only check for env existence
             env_path = self.envs_dir / method_id
             if (env_path / "pixi.toml").exists():
                 if verbose:
-                    typer.echo(f"  Nessun comando di validazione per {method_id}, ma l'ambiente esiste.")
+                    typer.echo(f"No validation command found for {method_id}, but the env is present.")
                 return True
             else:
                 if verbose:
-                    typer.echo(f"  Ambiente non trovato per {method_id} (atteso in: {env_path}).")
+                    typer.echo(f"Environment not found for {method_id} (checked in: {env_path}).")
                 return False
 
-        # 2. Verifica l'esistenza dell'ambiente Pixi
+        # Check on Pixi environment
         env_path = self.envs_dir / method_id
         manifest_path = env_path / "pixi.toml"
         
         if not manifest_path.exists():
             if verbose:
-                typer.secho(f"  Manifest non trovato: {manifest_path}", fg=typer.colors.YELLOW)
+                typer.secho(f"Manifest not found: {manifest_path}", fg=typer.colors.YELLOW)
             return False
 
-        # 3. Costruisci il comando Pixi
+        # Build the Pixi command
         # pixi run --manifest-path <path> <cmd>
         pixi_cmd = [
             str(self.pixi_exe),
@@ -92,13 +92,12 @@ class Validator:
 
         try:
             if verbose:
-                typer.echo(f"  Esecuzione: {' '.join(pixi_cmd)}")
+                typer.echo(f"Executing: {' '.join(pixi_cmd)}")
             
-            # Eseguiamo il comando dentro l'ambiente gestito da Pixi
             result = subprocess.run(
                 pixi_cmd,
                 check=True,
-                cwd=self.project_root, # Eseguiamo dalla root per coerenza
+                cwd=self.project_root,
                 stdout=subprocess.PIPE if not verbose else None,
                 stderr=subprocess.PIPE if not verbose else None,
                 text=True
@@ -107,56 +106,56 @@ class Validator:
 
         except subprocess.CalledProcessError as e:
             if verbose:
-                typer.secho(f"  Errore durante la validazione di {method_id}!", fg=typer.colors.RED)
+                typer.secho(f"Error validating {method_id}!", fg=typer.colors.RED)
                 if e.stderr:
-                    typer.echo(f"  STDERR:\n{e.stderr}")
+                    typer.echo(f"STDERR:\n{e.stderr}")
             return False
         except Exception as e:
-            typer.secho(f"  Eccezione imprevista: {e}", fg=typer.colors.RED)
+            typer.secho(f"Exception: {e}", fg=typer.colors.RED)
             return False
 
     def validate_installed(self, verbose: bool):
         """
-        Valida tutti i metodi che hanno una cartella corrispondente in .envs/
+        Validate all the methods that have a folder in .envs/
         """
         if not self.envs_dir.exists():
-            typer.secho("Directory .envs/ non trovata. Nessuna installazione rilevata.", fg=typer.colors.YELLOW)
+            typer.secho("Directory .envs/ non found. No installation found.", fg=typer.colors.YELLOW)
             return
 
         installed_envs = [p.name for p in self.envs_dir.iterdir() if p.is_dir()]
         
         if not installed_envs:
-            typer.secho("Nessun ambiente trovato in .envs/.", fg=typer.colors.YELLOW)
+            typer.secho("No environments found in .envs/.", fg=typer.colors.YELLOW)
             return
 
-        typer.secho(f"Avvio validazione per {len(installed_envs)} ambienti trovati...", bold=True)
+        typer.secho(f"Validating {len(installed_envs)} environment found...", bold=True)
         
         success_count = 0
         checked_count = 0
 
         for env_name in installed_envs:
-            # Verifica se questo ambiente corrisponde a un metodo noto
+            # Check env -> method
             if env_name not in self.registry:
                 if verbose:
-                    typer.echo(f"Ignorato environment '{env_name}' (nessun metodo corrispondente in methods/).")
+                    typer.echo(f"Skipping environment '{env_name}' (no corresponding method found in methods/).")
                 continue
 
             checked_count += 1
-            typer.echo(f"Validazione [{env_name}]... ", nl=False)
+            typer.echo(f"Validating [{env_name}]... ", nl=False)
             
             is_valid = self.validate_method(env_name, verbose=verbose)
             
             if is_valid:
-                typer.secho("PASSATO", fg=typer.colors.GREEN, bold=True)
+                typer.secho("OK", fg=typer.colors.GREEN, bold=True)
                 success_count += 1
             else:
-                typer.secho("FALLITO", fg=typer.colors.RED, bold=True)
+                typer.secho("FAILED", fg=typer.colors.RED, bold=True)
 
         if checked_count == 0:
-            typer.echo("Nessuno degli ambienti trovati corrisponde a metodi registrati.")
+            typer.echo("No environments found corresponding to methods in registry.")
             return
 
         color = typer.colors.GREEN if success_count == checked_count else typer.colors.RED
-        typer.secho(f"\nRiepilogo: {success_count}/{checked_count} metodi operativi.", fg=color, bold=True)
+        typer.secho(f"\Summary: {success_count}/{checked_count} operational methods.", fg=color, bold=True)
         
         return success_count == checked_count
