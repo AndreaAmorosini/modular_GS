@@ -2,7 +2,7 @@ title = "Video to Gaussian Splatting (MASt3R)"
 description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
 
 [global_options]
-filter_opacity_threshold = 0.25
+filter_opacity_threshold = 0.15
 
 [[steps]]
 name = "Extraction"
@@ -31,26 +31,26 @@ method = "methods/splat/fastgs.toml"
 source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
 #DEFAULT
-iterations = 30000
-densify_grad_threshold = 0.0002
-grad_abs_thresh = 0.0012
-grad_thresh = 0.0002
-opacity_reset_interval = 3000
-lambda_dsssim = 0.2
-dense = 0.001
-position_lr_final = 0.0000016
-shfeature_lr = 0.005
-feature_lr = 0.0025
-loss_thresh = 0.1
+# iterations = 30000
+# densify_grad_threshold = 0.0002
+# grad_abs_thresh = 0.0012
+# grad_thresh = 0.0002
+# opacity_reset_interval = 3000
+# lambda_dsssim = 0.2
+# dense = 0.001
+# position_lr_final = 0.0000016
+# shfeature_lr = 0.005
+# feature_lr = 0.0025
+# loss_thresh = 0.1
 #TESTING
-# iterations = 50000
-# densify_grad_threshold = 0.0008
-# grad_abs_thresh = 0.004
-# grad_thresh = 0.0008
-# opacity_reset_interval = 1000
-# lambda_dsssim = 0.4
-# dense = 0
-# position_lr_final = 0.000001
-# shfeature_lr = 0.05
-# feature_lr = 0.0050
-# loss_thresh = 0.01
+iterations = 200000
+densify_grad_threshold = 0.0008
+grad_abs_thresh = 0.004
+grad_thresh = 0.0008
+opacity_reset_interval = 1000
+lambda_dsssim = 0.4
+dense = 0
+position_lr_final = 0.000001
+shfeature_lr = 0.05
+feature_lr = 0.0050
+loss_thresh = 0.01

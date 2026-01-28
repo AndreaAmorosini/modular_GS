@@ -3,6 +3,8 @@ import os
 import re
 import json
 import shutil
+import struct
+import cv2
 from pathlib import Path
 from typing import Dict, Optional, Any
 from .context import PipelineContext
@@ -243,9 +245,9 @@ class PipelineRunner:
                             os.symlink(src_img, target_img)
                         else:
                             shutil.copytree(src_img, target_img)
-                        print(f"   [Auto-Adapt] Linked 'images' to '{target_images_name}'")
+                        print(f"[Auto-Adapt] Linked 'images' to '{target_images_name}'")
                     except Exception as e:
-                        print(f"   [Auto-Adapt] Error linking images: {e}")
+                        print(f"[Auto-Adapt] Error linking images: {e}")
 
         # Sparse Model Folder
         target_colmap_rel = inputs.get("expected_colmap_folder")
@@ -257,9 +259,9 @@ class PipelineRunner:
                     try:
                         target_colmap.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copytree(src_colmap, target_colmap)
-                        print(f"   [Auto-Adapt] Copied sparse model to '{target_colmap_rel}'")
+                        print(f"[Auto-Adapt] Copied sparse model to '{target_colmap_rel}'")
                     except Exception as e:
-                        print(f"   [Auto-Adapt] Error copying sparse model: {e}")
+                        print(f"[Auto-Adapt] Error copying sparse model: {e}")
 
         # COLMAP DB folder
         target_db_folder_rel = inputs.get("expected_db_folder")
@@ -271,12 +273,94 @@ class PipelineRunner:
                     try:
                         target_db.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src_db, target_db)
-                        print(f"   [Auto-Adapt] Copied database to '{target_db_folder_rel}/database.db'")
+                        print(f"[Auto-Adapt] Copied database to '{target_db_folder_rel}/database.db'")
                     except Exception as e:
-                        print(f"   [Auto-Adapt] Error copying database: {e}")
+                        print(f"[Auto-Adapt] Error copying database: {e}")
+        self._validate_and_fix_resolution(source_path, inputs)
+        
 
     def _get_status_file(self) -> Path:
         return self.context.get_output_dir() / "pipeline_status.json"
+    
+    def _validate_and_fix_resolution(self, source_path: Path, inputs: Dict[str, Any]):
+        img_folder_name = inputs.get("expected_input_images_folder")
+        colmap_folder_rel = inputs.get("expected_colmap_folder")
+        
+        if not img_folder_name or not colmap_folder_rel:
+            return
+        
+        img_dir = source_path / img_folder_name
+        colmap_dir = source_path / colmap_folder_rel
+        
+        if not img_dir.exists() or not colmap_dir.exists():
+            return
+
+        target_w, target_h = self._get_colmap_dims(colmap_dir)
+        if not target_w or not target_h:
+            return
+        
+        extensions = {".jpg", ".png", ".jpeg", ".PNG", ".JPG", ".JPEG"}
+        first_img_path = next((f for f in img_dir.iterdir() if f.is_file() and f.suffix in extensions), None)
+        
+        if not first_img_path:
+            return
+        
+        img = cv2.imread(str(first_img_path))
+        if img is None:
+            return
+        h, w = img.shape[:2]
+        
+        if w != target_w or h != target_h:
+            print(f"[Auto-Fix] Resolution mismatch detected. Model: {target_w}x{target_h} Image: {w}x{h}")
+            if img_dir.is_symlink():
+                print(f"[Auto-Fix] Breaking symlink for {img_folder_name} to allow resizing...")
+                link_target = os.readlink(img_dir)
+                img_dir.unlink()
+                if not os.path.isabs(link_target):
+                    link_target = str((img_dir.parent / link_target).resolve())
+                shutil.copytree(link_target, img_dir)
+                
+            print(f"[Auto-Fix] Resizing images to {target_w}x{target_h}...")
+            for f in img_dir.iterdir():
+                if f.is_file() and f.suffix in extensions:
+                    img = cv2.imread(str(f))
+                    if img is not None:
+                        resized = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+                        cv2.imwrite(str(f), resized)
+            print("[Auto-Fix] Resize Complete.")
+            
+    def _get_colmap_dims(self, model_path: Path):
+        bin_path = model_path / "cameras.bin"
+        if bin_path.exists():
+            try:
+                with open(bin_path, "rb") as f:
+                    data = f.read(8)
+                    if len(data) == 8 and struct.unpack("<Q", data)[0] > 0:
+                        # Read first camera: id(4), model(4), w(8), h(8) = 24 bytes
+                        data = f.read(24)
+                        if len(data) == 24:
+                            vals = struct.unpack("<iiQQ", data)
+                            return int(vals[2]), int(vals[3])
+            except Exception:
+                pass
+            
+        txt_path = model_path / "cameras.txt"
+        if txt_path.exists():
+            try:
+                with open(txt_path, "r") as f:
+                    for line in f:
+                        if line.startswith("#"): 
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            return int(parts[2]), int(parts[3])
+            except Exception:
+                pass
+        return None, None
+
+
+
+
 
     def _load_completed_steps(self) -> Dict[str, Any]:
         status_file = self._get_status_file()

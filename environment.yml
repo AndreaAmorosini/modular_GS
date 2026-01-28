@@ -6,14 +6,14 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  
-  # Dipendenze della pipeline
-  - typer     # Per la CLI
+  - typer 
   - toml
   - tomli
-  - tomli-w      # Per i file .toml
-  - jinja2    # Per il templating dei comandi  
+  - tomli-w 
+  - jinja2 
   - rerun-sdk
   - pyyaml
   - plyfile
   - numpy
+  - pip:
+    - opencv-python

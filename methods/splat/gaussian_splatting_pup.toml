@@ -46,7 +46,14 @@ recursive = true
 validation_command = "python -c 'import sys; sys.path.append(\"vendor/gaussian_splatting_pup\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_gaussian_rasterization; print(\"   diff_gaussian_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
 
 [execution]
-command = "python {{method_vendor_dir}}/gaussian_splatting_pup/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/gaussian_splatting_pup/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+command = """
+    python {{method_vendor_dir}}/gaussian_splatting_pup/convert.py -s {{inputs.source_path}} --skip_matching &&
+    python {{method_vendor_dir}}/gaussian_splatting_pup/train.py \
+        -s {{inputs.source_path}} \
+        --model_path {{outputs.trained_model_dir}} \
+        --iterations {{kwargs.iterations}} \
+        --data_device cpu
+"""
 
 [execution.inputs]
 expected_input_images_folder = "input"

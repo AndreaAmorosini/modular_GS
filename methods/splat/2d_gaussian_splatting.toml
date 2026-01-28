@@ -1,0 +1,64 @@
+title = "2D Gaussian Splatting"
+description = "[SIGGRAPH'24] 2D Gaussian Splatting for Geometrically Accurate Radiance Fields "
+url = "https://github.com/hbb1/2d-gaussian-splatting"
+type = "gaussian_splatting"
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+
+[installation]
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+
+dependencies = [
+    "gxx_linux-64",
+    "gcc_linux-64",
+    "make",
+    "cmake",
+    "colmap",
+    "typing_extensions",
+]
+
+pip_dependencies = [
+    "plyfile",
+    "tqdm",
+    "argparse",
+    "pyparsing",
+    "scikit-image",
+    "lpips",
+    "mediapy",
+    "trimesh"
+]
+
+build_commands = [
+    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "pip install --no-build-isolation {{method_vendor_dir}}/2d_gaussian_splatting/submodules/diff-surfel-rasterization",
+    "pip install --no-build-isolation {{method_vendor_dir}}/2d_gaussian_splatting/submodules/simple-knn",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/hbb1/2d-gaussian-splatting"
+branch = "main"
+path = "2d_gaussian_splatting"
+recursive = true
+
+[validation]
+validation_command = "python -c 'import sys; sys.path.append(\"vendor/2d_gaussian_splatting\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_surfel_rasterization; print(\"   diff_surfel_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
+
+[execution]
+command = "python {{method_vendor_dir}}/2d_gaussian_splatting/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/2d_gaussian_splatting/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+
+[execution.inputs]
+expected_input_images_folder = "input"
+expected_colmap_folder = "distorted/sparse/0"
+expected_db_folder = "distorted"
+
+
+[execution.help]
+help_command = "python {{method_vendor_dir}}/gaussian_splatting/train.py --help"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"

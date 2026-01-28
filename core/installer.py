@@ -36,6 +36,7 @@ class MethodInstaller:
 
         try:
             # Generate and write pixi.toml
+            vendor_cloned = False
             pixi_data = self._generate_pixi_structure()
             toml_path = env_path / "pixi.toml"
             with open(toml_path, "wb") as f:
@@ -54,6 +55,7 @@ class MethodInstaller:
 
             # 3. Gestione Git Repositories (Scarica sorgenti in vendor/)
             cloned_path =self._clone_repositories()
+            vendor_cloned = True
 
             # 4. Build Commands (Compilazioni e installazioni complesse dentro l'env)
             build_cmds = self.config.get("installation", {}).get("build_commands", [])
@@ -75,7 +77,7 @@ class MethodInstaller:
             #Remove .env and vendor dir
             print("Cleaning up...")
             shutil.rmtree(env_path)
-            if cloned_path:
+            if vendor_cloned:
                 shutil.rmtree(cloned_path)
             raise
 

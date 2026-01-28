@@ -2,7 +2,7 @@ title = "Video to Gaussian Splatting (MASt3R)"
 description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
 
 [global_options]
-filter_opacity_threshold = 0.05
+filter_opacity_threshold = 0.1
 
 [[steps]]
 name = "Extraction"
@@ -26,9 +26,9 @@ primary_output = "model_dir"
 
 [[steps]]
 name = "Training"
-method = "methods/splat/gsplat.toml"
+method = "methods/splat/2d_gaussian_splatting.toml"
 [steps.inputs]
 #{StepName}_{output_name}
 source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
-iterations = 30000
+iterations = 300000

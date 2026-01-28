@@ -67,7 +67,8 @@ python {{method_vendor_dir}}/fastgs/train.py \
 --shfeature_lr {{kwargs.shfeature_lr}} \
 --feature_lr {{kwargs.feature_lr}} \
 --loss_thresh {{kwargs.loss_thresh}} \
---data_device cpu
+--data_device cpu \
+--random_background \
 """
 
 [execution.inputs]
