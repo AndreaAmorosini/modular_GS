@@ -13,11 +13,11 @@ channels = ["pytorch", "nvidia", "conda-forge"]
 
 
 dependencies = [
-    "gxx_linux-64",
-    "gcc_linux-64",
-    "make",
-    "cmake",
-    "colmap",
+    # "gxx_linux-64",
+    # "gcc_linux-64",
+    # "make",
+    # "cmake",
+    # "colmap",
     "typing_extensions",
 ]
 

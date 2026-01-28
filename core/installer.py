@@ -68,7 +68,10 @@ class MethodInstaller:
             if post_cmds:
                 print("--- Running Post-Install Commands ---")
                 self._run_env_commands(post_cmds, env_path)
-
+                
+            #TODO: Da rivedere
+            # self._cleanup_build_dep(env_path, pixi_data)
+            
             # Segna l'installazione come completata con successo
             sentinel_file.touch()
             print("--- Installation Complete ---")
@@ -98,6 +101,13 @@ class MethodInstaller:
         cuda_ver_raw = env_cfg.get("cuda", "11.8")
         cuda_clean = cuda_ver_raw.replace(".", "")
         cuda_folder = f"cu{cuda_clean}"
+        
+        C_COMPILER_VERSION = None
+        if int(cuda_clean) < 120:
+            C_COMPILER_VERSION = "11"
+        elif int(cuda_clean) >=  120:
+            C_COMPILER_VERSION = "12"
+
 
         py_ver_raw = env_cfg.get("python_version", "3.10")
         py_tag = "cp" + py_ver_raw.replace(".", "")
@@ -130,27 +140,31 @@ class MethodInstaller:
         for dep in install_cfg.get("dependencies", []):
             n, v = self._parse_dep(dep)
             pixi["dependencies"][n] = self._format_ver(v)
-            if n == "pytorch-cuda":
-                has_pytorch_cuda = True
-            if n == "cuda-toolkit":
-                has_cuda_toolkit = True                
-                
-            C_COMPILER_VERSION = None
-            if int(cuda_clean) < 120:
-                C_COMPILER_VERSION = "11"
-            elif int(cuda_clean) >=  120:
-                C_COMPILER_VERSION = "12"
-                
+            # if n == "pytorch-cuda":
+            #     has_pytorch_cuda = True
+            # if n == "cuda-toolkit":
+            #     has_cuda_toolkit = True                
             
-            if n == "gxx_linux-64":  
-                pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
-            if n == "gcc_linux-64":
-                pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
+            # if n == "gxx_linux-64":  
+            #     pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
+            # if n == "gcc_linux-64":
+            #     pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
+                
+        if type == "gaussian_splatting":
+            pixi["dependencies"].update(
+                {
+                    "gxx_linux-64": f"{C_COMPILER_VERSION}.*",
+                    "gcc_linux-64": f"{C_COMPILER_VERSION}.*",
+                    "colmap": "*",
+                    "make": "*",
+                    "cmake": "*",
+                }
+            )
 
         pixi["dependencies"].update(
             {
                 "cuda-toolkit": f"{cuda_ver_raw}",
-                "pytorch-cuda": f"{cuda_ver_raw}",
+                # "pytorch-cuda": f"{cuda_ver_raw}",
                 "cuda-command-line-tools": f"{cuda_ver_raw}.*",
                 "cuda-libraries": f"{cuda_ver_raw}.*",
                 "cuda-cudart": f"{cuda_ver_raw}.*",
@@ -186,11 +200,11 @@ class MethodInstaller:
                 )
 
                 if found_wheel:
-                    print(f"  -> Found wheel: {found_wheel}")
+                    print(f"-> Found wheel: {found_wheel}")
                     wheel_filename = found_wheel
                 else:
                     print(
-                        f"  -> ! Warning: Wheel not found for {pkg_name}, guessing name."
+                        f"-> ! Warning: Wheel not found for {pkg_name}, guessing name."
                     )
                     wheel_filename = (
                         f"{safe_pkg}-0.0.0-{py_tag}-{py_tag}-{platform_tag}.whl"
@@ -296,6 +310,43 @@ class MethodInstaller:
             except subprocess.CalledProcessError as e:
                 print(f"Command failed: {cmd_str}")
                 raise e
+            
+    #TODO: Da rivedere
+    def _cleanup_build_dep(self, env_path: Path, pixi_data: Dict):
+        """
+        Perform a cleanup inside the newly created env to remove all packages necessary only for compiling.
+        """
+        
+        #Packages removable
+        build_pkgs = [
+            "gxx_linux-64",
+            "gcc_linux-64",
+            "make",
+            "cmake",
+            "cuda-nvcc",
+            # "cuda-toolkit",
+            # "cuda-command-line-tools",
+            "cuda-cudart-dev",
+            "cuda-driver-dev",
+            "cuda-cccl",
+        ]
+
+        modified = False
+        deps = pixi_data.get("dependencies", {})
+        for pkg in build_pkgs:
+            if pkg in deps:
+                del deps[pkg]
+                modified = True
+                
+        if modified:
+            print("Cleaning up Build Dependencies...")
+            with open(env_path / "pixi.toml", "wb") as f:
+                tomli_w.dump(pixi_data, f)
+                
+            subprocess.check_call(
+                [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
+            )
+
 
     def _resolve_template(self, text: str) -> str:
         """Sostituisce placeholder {{...}} con path assoluti (slash normalizzati)."""
