@@ -6,6 +6,7 @@ import typer
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 from core.utils import get_or_download_pixi
+import json
 
 class Validator:
     """Gestisce la validazione dei metodi installati tramite Pixi."""
@@ -75,6 +76,15 @@ class Validator:
         # Check on Pixi environment
         env_path = self.envs_dir / method_id
         manifest_path = env_path / "pixi.toml"
+        env_name = None
+        
+        if not manifest_path.exists():
+            share_meta = env_path / "shared_env.json"
+            if share_meta.exists():
+                with open(share_meta, "r") as f:
+                    meta = json.load(f)
+                manifest_path = Path(meta.get("manifest_path", ""))
+                env_name = meta.get("env_name", None)
         
         if not manifest_path.exists():
             if verbose:
@@ -88,7 +98,12 @@ class Validator:
             "run",
             "--manifest-path",
             str(manifest_path),
-        ] + shlex.split(cmd_str)
+        ]
+        
+        if env_name:
+            pixi_cmd += ["-e", env_name]
+            
+        pixi_cmd += shlex.split(cmd_str)
 
         try:
             if verbose:

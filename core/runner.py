@@ -56,9 +56,10 @@ class PipelineRunner:
                 method_config = tomli.load(f)
 
             env_path = self.envs_base_dir / method_path.stem
-
-            # Check .env presence
-            if not (env_path / "pixi.toml").exists():
+            
+            manifest_path = env_path / "pixi.toml"
+            shared_meta = env_path / "shared_env.json"
+            if not manifest_path.exists() and not shared_meta.exists():
                  print(f"Errore: Ambiente {method_path.stem} non installato.")
                  raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
 
@@ -98,7 +99,6 @@ class PipelineRunner:
             
             runner = MethodRunner(method_config, env_path, self.base_path)
             
-            # Execution
             outputs = runner.run(step_inputs, step_kwargs, step_output_dir)
             
             #Locate the final PLY file and put it in the root of the project
@@ -130,34 +130,7 @@ class PipelineRunner:
             global_opts = self.config.get("global_options", {})
             opacity_threshold = global_opts.get("filter_opacity_threshold")
 
-            if opacity_threshold is not None:
-                # Check on .PLY
-                # TODO : Magari da generalizzare, ma per ora supporta formati gsplat e formati gaussian_spatting di graphdeco-inria
-                # TODO: Estrarre dalla logica del post processing per copiare l'output finale in una cartella nella root del progetto
-                # search_dirs = {step_output_dir}
-                # for val in outputs.values():                    
-                #     if isinstance(val, (str, Path)):
-                #         p = Path(val)
-                #         if p.exists() and p.is_dir():
-                #             search_dirs.add(p)
-                # target_ply = None
-                # highest_num = -1
-                
-                # for sd in search_dirs:
-                #     subdirs = [sd / "point_cloud", sd / "ply"]
-                #     for subdir in subdirs:
-                #         if subdir.exists() and subdir.is_dir():
-                #             candidates = list(subdir.rglob("*.ply"))
-                #             for c in candidates:
-                #                 #To avoid temp files
-                #                 if "_filtered" in c.name:
-                #                     continue
-                #                 nums = re.findall(r"\d+", c.stem)
-                #                 current_num = int(nums[-1]) if nums else 0
-                #                 if target_ply is None or current_num > highest_num:
-                #                     target_ply = c
-                #                     highest_num = current_num
-                                    
+            if opacity_threshold is not None:                                    
                 if target_ply:
                     print(f"[Auto-Filter] Selected PLY: '{target_ply.name}' (Iteration: {highest_num})")
                     filtered_path = target_ply.parent / f"{target_ply.stem}_filtered{target_ply.suffix}"
@@ -196,7 +169,6 @@ class PipelineRunner:
                     shutil.copy2(target_ply, dest_path)
                     print(f"[Output] Copied final PLY to '{dest_path.name}'")
 
-            
             # Save completion status
             self._save_step_completion(step_name, outputs)
 

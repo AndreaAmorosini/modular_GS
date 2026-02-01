@@ -7,18 +7,21 @@ type = "gaussian_splatting"
 python_version = "3.10"
 cuda = "11.8"
 PYTHONNOUSERSITE = "1"
+torch_version = "2.7.1"
+torchvision_version = "0.22.1"
 
 [installation]
+shared_env = true
 channels = ["pytorch", "nvidia", "conda-forge"]
 
 
-dependencies = [
-    "gxx_linux-64",
-    "gcc_linux-64",
-    "make",
-    "cmake",
-    "colmap",
-]
+# dependencies = [
+#     "gxx_linux-64",
+#     "gcc_linux-64",
+#     "make",
+#     "cmake",
+#     "colmap",
+# ]
 
 pip_dependencies = [
     "plyfile",
@@ -27,7 +30,7 @@ pip_dependencies = [
 ]
 
 build_commands = [
-    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
+    # "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
     "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
     "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/diff-gaussian-rasterization",
     "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/simple-knn",

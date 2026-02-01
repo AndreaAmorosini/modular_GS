@@ -9,8 +9,9 @@ from core.utils import get_or_download_pixi
 import urllib.request
 import re
 import json
+import tomli
 
-
+#TODO: Da rivedere logica di base per provare a creare meno environment in base alla combinazione di CUDA_VER:TORCH_VER
 class MethodInstaller:
     def __init__(self, method_config: Dict, base_path: Path):
         self.config = method_config
@@ -23,77 +24,224 @@ class MethodInstaller:
     def install(self, env_path: Path):
         env_path.mkdir(parents=True, exist_ok=True)
 
-        # --- CACHING CHECK ---
-        # If the file exist the installation should have already completed
         sentinel_file = env_path / ".install_complete"
         if sentinel_file.exists():
             print(
-                f"--- Environment in {env_path.name} is already installed. Skipping setup. ---"
+                f"Environment in {env_path.name} is already installed. Skipping setup."
             )
             return
 
-        print(f"--- Configuring Environment in {env_path} ---")
+        print(f"Configuring Environment in {env_path}")
 
         try:
-            # Generate and write pixi.toml
             vendor_cloned = False
-            pixi_data = self._generate_pixi_structure()
-            toml_path = env_path / "pixi.toml"
-            with open(toml_path, "wb") as f:
-                tomli_w.dump(pixi_data, f)
-            print(f"Configuration generated at {toml_path}")
 
-            # 2. Pixi Install (Dipendenze binarie e Python base)
-            print("--- Running Pixi Install ---")
-            try:
+            use_shared = self.config.get("installation", {}).get("shared_env", False)
+            if use_shared:
+                manifest_path, env_name = self._install_shared_env(env_path)
+            else:
+                pixi_data = self._generate_pixi_structure()
+                toml_path = env_path / "pixi.toml"
+                with open(toml_path, "wb") as f:
+                    tomli_w.dump(pixi_data, f)
+                print(f"Configuration generated at {toml_path}")
+
+                print(" Running Pixi Install ")
                 subprocess.check_call(
                     [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
                 )
-            except subprocess.CalledProcessError:
-                print("!!! Installation Failed !!!")
-                raise
 
-            # 3. Gestione Git Repositories (Scarica sorgenti in vendor/)
-            cloned_path =self._clone_repositories()
+            cloned_path = self._clone_repositories()
             vendor_cloned = True
-
-            # 4. Build Commands (Compilazioni e installazioni complesse dentro l'env)
-            build_cmds = self.config.get("installation", {}).get("build_commands", [])
-            if build_cmds:
-                print("--- Running Build Commands ---")
-                self._run_env_commands(build_cmds, env_path)
-
-            # 5. Post Install Commands (Setup finali)
-            post_cmds = self.config.get("installation", {}).get("post_install_commands", [])
-            if post_cmds:
-                print("--- Running Post-Install Commands ---")
-                self._run_env_commands(post_cmds, env_path)
-                
-            #TODO: Da rivedere
-            # self._cleanup_build_dep(env_path, pixi_data)
             
-            # Segna l'installazione come completata con successo
+            env_cfg = self.config.get("environment", {})
+            torch_ver = env_cfg.get("torch_version", None)
+            torchvision_ver = env_cfg.get("torchvision_version", None)
+            cuda_ver = env_cfg.get("cuda", "11.8").replace(".", "")
+            
+            torch_install_cmd = None
+            if torch_ver and torchvision_ver and cuda_ver:
+                torch_install_cmd = (
+                    f"pip install torch=={torch_ver} torchvision=={torchvision_ver} "
+                    f"--index-url https://download.pytorch.org/whl/cu{cuda_ver}"
+                )
+                
+            if use_shared and torch_install_cmd and manifest_path and env_name:
+                shared_prefix = Path(manifest_path).parent / ".pixi" / "envs" / env_name
+                marker = shared_prefix / ".torch_installed"
+                if not marker.exists():
+                    print("Installing PyTorch in Shared Environment")
+                    self._run_env_commands(
+                        [torch_install_cmd], env_path, manifest_path, env_name
+                    )
+                    marker.touch()
+                print("PyTorch already installed in Shared Environment. Skipping.")
+                torch_install_cmd = None  # Avoid reinstalling in build commands
+                
+            build_cmds = self.config.get("installation", {}).get("build_commands", [])
+            if torch_install_cmd:
+                build_cmds = [torch_install_cmd] + build_cmds
+            if build_cmds:
+                print("Running Build Commands")
+                if use_shared:
+                    self._run_env_commands(
+                        build_cmds, env_path, manifest_path, env_name
+                    )
+                else:
+                    self._run_env_commands(build_cmds, env_path)
+
+            post_cmds = self.config.get("installation", {}).get(
+                "post_install_commands", []
+            )
+            if post_cmds:
+                print("Running Post-Install Commands")
+                if use_shared:
+                    self._run_env_commands(post_cmds, env_path, manifest_path, env_name)
+                else:
+                    self._run_env_commands(post_cmds, env_path)
+
             sentinel_file.touch()
-            print("--- Installation Complete ---")
+            print("Installation Complete")
         except Exception as e:
-            print(f"!!! Installation Failed: {e} !!!")
-            #Remove .env and vendor dir
+            print(f"Installation Failed: {e}")
             print("Cleaning up...")
             shutil.rmtree(env_path)
             if vendor_cloned:
                 shutil.rmtree(cloned_path)
             raise
 
+    def _install_shared_env(self, env_path: Path) -> tuple[Path, str]:
+        method_id = self.config.get("__id__", env_path.name)
+        env_cfg = self.config.get("environment", {})
+        cuda_ver = env_cfg.get("cuda", "11.8").replace(".", "")
+        torch_ver = env_cfg.get("torch_version", "2.7.1")
+        shared_dir = self.base_path / ".envs" / "_shared"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = shared_dir / "pixi.toml"
+
+        pixi = self._load_or_init_shared_manifest(manifest_path)
         
+        base_feature = self._upsert_shared_base_feature(pixi)
+        tool_feature = f"tool-{method_id}"
+        self._upsert_tool_feature(pixi, tool_feature)
+        
+        safe_method_string = re.sub(r"[^a-z0-9-]+", "-", method_id.lower())
+        safe_torch_string = torch_ver.replace(".", "-")
+        env_name = f"{safe_method_string}-cu{cuda_ver}-torch{safe_torch_string}"
+                
+        pixi.setdefault("environments", {})[env_name] = {
+            "features": [base_feature, tool_feature]
+        }
+
+        with open(manifest_path, "wb") as f:
+            tomli_w.dump(pixi, f)
+
+        subprocess.check_call(
+            [
+                str(self.pixi_exe),
+                "install",
+                "-e",
+                env_name,
+                "--manifest-path",
+                str(manifest_path),
+            ],
+            cwd=self.base_path,
+            env=os.environ,
+        )
+
+        meta = {"manifest_path": str(manifest_path), "env_name": env_name}
+        with open(env_path / "shared_env.json", "w") as f:
+            json.dump(meta, f)
+
+        return manifest_path, env_name
+
+    def _load_or_init_shared_manifest(self, manifest_path: Path) -> Dict:
+        if manifest_path.exists():
+            with open(manifest_path, "rb") as f:
+                return tomli.load(f)
+
+        return {
+            "project": {
+                "name": "gs_shared",
+                "version": "0.1.0",
+                "channels": self.config.get("installation", {}).get(
+                    "channels", ["pytorch", "nvidia", "conda-forge"]
+                ),
+                "platforms": ["linux-64"],
+            },
+            "dependencies": {"python": "3.10.*", "pip": "*"},
+            "pypi-dependencies": {},
+            "feature": {},
+            "environments": {},
+            "system-requirements": {"linux": "5.4"},
+        }
+
+    def _upsert_shared_base_feature(self, pixi: Dict):
+        env_cfg = self.config.get("environment", {})
+        cuda_ver_raw = env_cfg.get("cuda", "11.8")
+        cuda_ver = cuda_ver_raw.replace(".", "")
+        torch_ver = env_cfg.get("torch_version", None)
+        torchvision_ver = env_cfg.get("torchvision_version", None)
+        
+        base_feature = f"base-cu{cuda_ver}"
+        if torch_ver:
+            base_feature += f"-torch{torch_ver.replace('.', '-')}"
+
+        base_deps = {
+            "gxx_linux-64": "11.*",
+            "gcc_linux-64": "11.*",
+            "make": "*",
+            "cmake": "*",
+            "cuda-toolkit": f"{cuda_ver_raw}",
+            "cuda-command-line-tools": f"{cuda_ver_raw}.*",
+            "cuda-libraries": f"{cuda_ver_raw}.*",
+            "cuda-cudart": f"{cuda_ver_raw}.*",
+            "cuda-nvcc": f"{cuda_ver_raw}.*",
+            "cuda-cudart-dev": f"{cuda_ver_raw}.*",
+            "cuda-driver-dev": f"{cuda_ver_raw}.*",
+            "cuda-cccl": f"{cuda_ver_raw}.*",
+            "colmap": "*",
+            "ninja": "*",
+        }
+        base_pypi = {}
+
+        pixi.setdefault("feature", {})
+        pixi["feature"][base_feature] = {
+            "dependencies": base_deps,
+            # "pypi-dependencies": base_pypi,
+        }
+        return base_feature
+
+    def _upsert_tool_feature(self, pixi: Dict, feature_name: str):
+        install_cfg = self.config.get("installation", {})
+        deps = {}
+        for dep in install_cfg.get("dependencies", []):
+            n, v = self._parse_dep(dep)
+            # evita duplicati con base
+            if n in ("gxx_linux-64", "gcc_linux-64", "make", "cmake"):
+                continue
+            deps[n] = self._format_ver(v)
+
+        pypi = {}
+        for dep in install_cfg.get("pip_dependencies", []):
+            n, v = self._parse_pypi_dep(dep)
+            # evita torch/vision in tool
+            if n in ("torch", "torchvision"):
+                continue
+            pypi[n] = self._format_ver(v, True)
+
+        pixi.setdefault("feature", {})
+        pixi["feature"][feature_name] = {
+            "dependencies": deps,
+            "pypi-dependencies": pypi,
+        }
 
     def _generate_pixi_structure(self) -> Dict:
         type = self.config.get("type", "")
         if type == "":
             print("[ERROR] No Type specified in the TOML specify one of the following (preprocess, sfm, gaussian_splatting, post_processing)")
             raise ValueError("No Type specified")
-        
-        #TODO: Setting di librerie base in base al tipo di tool
-        
+                
         install_cfg = self.config.get("installation", {})
         env_cfg = self.config.get("environment", {})
 
@@ -140,15 +288,6 @@ class MethodInstaller:
         for dep in install_cfg.get("dependencies", []):
             n, v = self._parse_dep(dep)
             pixi["dependencies"][n] = self._format_ver(v)
-            # if n == "pytorch-cuda":
-            #     has_pytorch_cuda = True
-            # if n == "cuda-toolkit":
-            #     has_cuda_toolkit = True                
-            
-            # if n == "gxx_linux-64":  
-            #     pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
-            # if n == "gcc_linux-64":
-            #     pixi["dependencies"][n] = f"{C_COMPILER_VERSION}.*"
                 
         if type == "gaussian_splatting":
             pixi["dependencies"].update(
@@ -164,7 +303,6 @@ class MethodInstaller:
         pixi["dependencies"].update(
             {
                 "cuda-toolkit": f"{cuda_ver_raw}",
-                # "pytorch-cuda": f"{cuda_ver_raw}",
                 "cuda-command-line-tools": f"{cuda_ver_raw}.*",
                 "cuda-libraries": f"{cuda_ver_raw}.*",
                 "cuda-cudart": f"{cuda_ver_raw}.*",
@@ -225,7 +363,7 @@ class MethodInstaller:
         if not repos:
             return
 
-        print("--- Cloning Git Repositories ---")
+        print(" Cloning Git Repositories ")
         self.vendor_dir.mkdir(parents=True, exist_ok=True)
 
         for repo in repos:
@@ -248,14 +386,16 @@ class MethodInstaller:
             subprocess.check_call(cmd)
             return target_path
 
-    def _run_env_commands(self, commands: List[str], env_path: Path):
+    def _run_env_commands(self, commands: List[str], env_path: Path, manifest_path: Path | None = None, env_name: str | None = None):
         """Esegue comandi shell all'interno dell'ambiente Pixi."""
         
         env_cfg = self.config.get("environment", {})
         custom_env = os.environ.copy()
-        custom_env["CUDA_HOME"] = str(env_path.resolve())
-        
-        pixi_env_prefix = env_path / ".pixi" / "envs" / "default"
+                
+        if manifest_path and env_name:
+            pixi_env_prefix = Path(manifest_path).parent / ".pixi" / "envs" / env_name
+        else:
+            pixi_env_prefix = env_path / ".pixi" / "envs" / "default"
         
         if pixi_env_prefix.exists():
             custom_env["CUDA_HOME"] = str(pixi_env_prefix.resolve())
@@ -290,21 +430,28 @@ class MethodInstaller:
         for key, value in env_cfg.items():
             if key not in ("python_version", "cuda"):
                 custom_env[key] = str(value)
-                
+
         for cmd_template in commands:
             cmd_str = self._resolve_template(cmd_template)
             print(f"Running: {cmd_str}")
-
-            # Parsing arguments
             args = shlex.split(cmd_str, posix=os.name != "nt")
 
-            full_cmd = [
-                str(self.pixi_exe),
-                "run",
-                "--manifest-path",
-                str(env_path / "pixi.toml"),
-            ] + args
-
+            if manifest_path and env_name:
+                full_cmd = [
+                    str(self.pixi_exe),
+                    "run",
+                    "-e",
+                    env_name,
+                    "--manifest-path",
+                    str(manifest_path),
+                ] + args
+            else:
+                full_cmd = [
+                    str(self.pixi_exe),
+                    "run",
+                    "--manifest-path",
+                    str(env_path / "pixi.toml"),
+                ] + args
             try:
                 subprocess.check_call(full_cmd, cwd=self.base_path, env=custom_env)
             except subprocess.CalledProcessError as e:

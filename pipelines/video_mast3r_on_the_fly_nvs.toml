@@ -7,7 +7,7 @@ filter_opacity_threshold = 0.1
 [[steps]]
 name = "Extraction"
 method = "methods/preprocess/sharp_frames.toml"
-# Questa chiave userà il valore passato via CLI --input
+
 [steps.inputs]
 video = "{{context.input_file}}"
 
@@ -26,9 +26,9 @@ primary_output = "model_dir"
 
 [[steps]]
 name = "Training"
-method = "methods/splat/2d_gaussian_splatting.toml"
+method = "methods/splat/on_the_fly_nvs.toml"
 [steps.inputs]
 #{StepName}_{output_name}
 source_path = "{{context.StructureFromMotion_model_dir}}"
-[steps.kwargs]
-iterations = 50000
+# [steps.kwargs]
+# iterations = 15000

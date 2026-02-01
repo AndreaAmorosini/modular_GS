@@ -10,6 +10,7 @@ cuda = "11.8"
 PYTHONNOUSERSITE = "1"
 
 [installation]
+share_env = false
 channels = ["pytorch", "nvidia", "conda-forge"]
 
 dependencies = [

@@ -1,6 +1,7 @@
 import typer
 import logging
 import tomli
+import tomli_w
 from pathlib import Path
 from typing_extensions import Annotated
 from typing import List, Optional
@@ -8,19 +9,14 @@ import subprocess
 import os
 import shlex
 
-# Importiamo le nuove classi aggiornate per Pixi
 from core.runner import PipelineRunner
 from core.installer import MethodInstaller
 
-# Nota: MethodUninstaller per Pixi è banale (rimozione cartella),
-# possiamo gestirlo direttamente qui o aggiornare la classe se esiste.
-# Per semplicità lo gestiamo qui o assumiamo una classe compatibile.
 from core.validation import Validator
 from core.utils import setup_logging, get_or_download_pixi
 
-# --- Setup App ---
-app = typer.Typer(help="Pipeline 3D modulare con ambienti locali Pixi.")
-methods_app = typer.Typer(help="Installa, disinstalla e valida i metodi (tool).")
+app = typer.Typer(help="Modular Pipeline for Gaussian SPlatting.")
+methods_app = typer.Typer(help="Install, validate, remove and execute methods in various pipelines.")
 app.add_typer(methods_app, name="methods")
 
 # Definiamo i percorsi radice
@@ -31,11 +27,8 @@ VENDOR_DIR = PROJECT_ROOT / "vendor"  # Cartella per i repository clonati
 
 
 def _find_manifest(method_name: str) -> Path:
-    """Helper per trovare il file .toml di un metodo."""
-    # Cerchiamo ricorsivamente o direttamente in methods/
-    # Logica semplificata rispetto al validatore completo
+    """Helper to find the .toml file."""
     candidates = list(METHODS_DIR.rglob(f"{method_name}.toml"))
-    # Cerca anche se method_name è un path parziale (es. splat/nerfstudio)
     if not candidates:
         possible_path = METHODS_DIR / f"{method_name}.toml"
         if possible_path.exists():
@@ -49,36 +42,85 @@ def _find_manifest(method_name: str) -> Path:
 
     return candidates[0]
 
+# Helper method to remove shared entries from shared pixi.toml
+def _remove_shared_entries(method_id: str):
+    shared_manifest = ENVS_DIR / "_shared" / "pixi.toml"
+    shared_envs_dir = ENVS_DIR / "_shared" / ".pixi" / "envs"
+    if not shared_manifest.exists():
+        return
+    
+    with open(shared_manifest, "rb") as f:
+        pixi = tomli.load(f)
+        
+    tool_feature = f"tool-{method_id}"
+    envs = pixi.get("environments", {}) or {}
+    features = pixi.get("feature", {}) or {}
+    
+    envs_to_remove = [
+        name for name, cfg in envs.items()
+        if tool_feature in cfg.get("features", [] or [])
+    ]
+    for name in envs_to_remove:
+        del envs[name]
+        
+    if tool_feature in features:
+        del features[tool_feature]
+        
+    used_features = set()
+    for cfg in envs.values():
+        used_features.update(cfg.get("features", []) or [])
+        
+    base_features = [k for k in features.keys() if k.startswith("base-")]
+    for bf in base_features:
+        if bf not in used_features:
+            del features[bf]
+        
+    pixi["environments"] = envs
+    pixi["feature"] = features
+    
+    with open(shared_manifest, "wb") as f:
+        tomli_w.dump(pixi, f)
+        
+    if shared_envs_dir.exists():
+        for env_name in envs_to_remove:
+            env_path = shared_envs_dir / env_name
+            if env_path.exists():
+                import shutil
+                shutil.rmtree(env_path)
+                
+        for env_dir in shared_envs_dir.iterdir():
+            if env_dir.is_dir() and env_dir.name not in envs:
+                shutil.rmtree(env_dir)
+
 
 @app.command()
 def run(
     config_file: Annotated[
-        Path, typer.Argument(help="Percorso al file .toml della pipeline.")
+        Path, typer.Argument(help="Path to the .toml file for the pipeline.")
     ],
     input_file: Annotated[
-        Path, typer.Option("--input", "-i", help="[Override] File di input.")
+        Path, typer.Option("--input", "-i", help="[Override] Input file path.")
     ] = None,
     output_dir: Annotated[
-        Path, typer.Option("--output", "-o", help="[Override] Directory di output.")
+        Path, typer.Option("--output", "-o", help="[Override] Main Output Directory.")
     ] = None,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Log di DEBUG dettagliati.")
+        bool, typer.Option("--verbose", "-v", help="Enable Verbose logging.")
     ] = False,
     restart: Annotated[
-        bool, typer.Option("--restart", "-r", help="Pulisce la cartella di output prima di iniziare.")
+        bool, typer.Option("--restart", "-r", help="Restart the pipeline from the start (delete everything in the output directory).")
     ] = False,
     set_params: Annotated[
         Optional[List[str]], 
-        typer.Option("--set", "-s", help="Override parametri (es. --set iterations=1000).")
+        typer.Option("--set", "-s", help="Override params specified in the pipeline file (es. --set iterations=1000).")
     ] = None,
     show_info: Annotated[
-        bool, typer.Option("--info", help="Mostra i parametri configurabili della pipeline ed esce.")
+        bool, typer.Option("--info", help="Show the pipeline overrideable parameters.")
     ] = False,
 ):
-    """Esegue una pipeline definita da un file di configurazione."""
+    """Execute the pipeline defined in the given TOML configuration file."""
     setup_logging(level=logging.DEBUG if verbose else logging.INFO)
     
-    # Prepariamo gli overrides
     overrides = {}
     if input_file:
         overrides["input_file"] = str(input_file.resolve())
@@ -91,10 +133,9 @@ def run(
     if set_params:
         for param in set_params:
             if "=" not in param:
-                logging.warning(f"Ignorato parametro malformato '{param}'. Usa KEY=VALUE.")
+                logging.warning(f"Malformed Parameter ignored '{param}'. Use KEY=VALUE.")
                 continue
             key, val = param.split("=", 1)
-            # Tentativo di cast automatico
             if val.lower() == "true": val = True
             elif val.lower() == "false": val = False
             elif val.isdigit(): val = int(val)
@@ -115,11 +156,11 @@ def run(
 
         runner.run()
         
-        typer.secho(f"Pipeline completata con successo!", fg=typer.colors.GREEN)
+        typer.secho("Pipeline completed successfully", fg=typer.colors.GREEN)
 
     except Exception as e:
-        logging.error(f"Errore critico durante l'esecuzione: {e}", exc_info=verbose)
-        typer.secho(f"Pipeline fallita.", fg=typer.colors.RED)
+        logging.error(f"Critical Error during execution: {e}", exc_info=verbose)
+        typer.secho("Pipeline Failed.", fg=typer.colors.RED)
         raise typer.Abort()
 
 @methods_app.command("install")
@@ -127,49 +168,47 @@ def install_method(
     method_name: Annotated[
         str,
         typer.Argument(
-            help="Nome del metodo da installare (es. 'colmap' o 'sfm/colmap')."
+            help="Name of the method to install (es. 'colmap' o 'sfm/colmap')."
         ),
     ],
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra output dettagliato.")
+        bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
 ):
-    """Installa un metodo creando un ambiente Pixi locale in ./envs/"""
+    """Install a method"""
     setup_logging(level=logging.DEBUG if verbose else logging.INFO)
 
     method_path = _find_manifest(method_name)
 
     try:
-        typer.echo(f"Caricamento configurazione da {method_path}...")
+        typer.echo(f"Loading configuration from {method_path}...")
 
-        # 1. Carichiamo la configurazione TOML (necessario per il nuovo Installer)
         with open(method_path, "rb") as f:
             method_config = tomli.load(f)
 
-        # 2. Definiamo il percorso dell'ambiente
+        # Definiamo il percorso dell'ambiente
         # Usiamo il titolo del metodo o il nome del file per la cartella env
         safe_name = (
             method_config.get("title", method_path.stem).replace(" ", "_").lower()
         )
         env_path = ENVS_DIR / safe_name
 
-        typer.echo(f"Installazione ambiente Pixi in: {env_path}")
+        typer.echo(f"Installing tool env in: {env_path}")
 
-        # 3. Inizializziamo il nuovo Installer Pixi
+        #Inizializziamo il nuovo Installer Pixi
         # Nota: Passiamo il dict di config e la root del progetto
         installer = MethodInstaller(method_config, PROJECT_ROOT)
 
-        # 4. Eseguiamo l'installazione
         installer.install(env_path)
 
         typer.secho(
-            f"Installazione di '{method_name}' completata con successo!",
+            f"'{method_name}' installation completed successfully!",
             fg=typer.colors.GREEN,
         )
 
     except Exception as e:
-        logging.error(f"Installazione fallita: {e}", exc_info=verbose)
-        typer.secho(f"Installazione di '{method_name}' fallita.", fg=typer.colors.RED)
+        logging.error(f"Installation Failed: {e}", exc_info=verbose)
+        typer.secho(f"'{method_name}' installation failed.", fg=typer.colors.RED)
         raise typer.Abort()
 
 
@@ -177,21 +216,20 @@ def install_method(
 def uninstall_method(
     method_name: Annotated[
         str,
-        typer.Argument(help="Nome del metodo da disinstallare."),
+        typer.Argument(help="Name of the method to remove."),
     ],
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra output dettagliato.")
+        bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
 ):
-    """Rimuove un metodo: elimina la cartella dell'ambiente in ./envs/"""
+    """Delete a method, delete the env folder, any repository cloned, and shared entries."""
     setup_logging(level=logging.DEBUG if verbose else logging.INFO)
 
-    # Cerchiamo di dedurre il nome della cartella envs
-    # Questo è un po' tricky senza ricaricare il toml, proviamo euristica o caricamento
     try:
         method_path = _find_manifest(method_name)
         with open(method_path, "rb") as f:
             cfg = tomli.load(f)
+        method_id = method_path.stem
         env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
         env_path = ENVS_DIR / env_name
         
@@ -206,47 +244,51 @@ def uninstall_method(
         env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
 
     if not env_path.exists():
-        typer.secho(f"Nessun ambiente trovato in {env_path}", fg=typer.colors.YELLOW)
+        typer.secho(f"No environment found in {env_path}", fg=typer.colors.YELLOW)
         return
 
     if not typer.confirm(
-        f"Sei sicuro di voler eliminare l'ambiente Pixi in '{env_path}'?",
+        f"Are you sure you want to delete '{method_id}'?",
         abort=True,
     ):
         return
 
     try:
         import shutil
+        
+        if cfg.get("installation", {}).get("shared_env", False):
+            typer.echo("Deleting shared entries from pixi.toml...")
+            _remove_shared_entries(method_id)
 
         typer.echo(f"Rimozione cartella {env_path}...")
         shutil.rmtree(env_path)
         typer.secho(
-            f"Disinstallazione di '{method_name}' completata!", fg=typer.colors.GREEN
+            f"'{method_name}' removal completed!", fg=typer.colors.GREEN
         )
         
-        typer.echo("Rimozione eventuali repository vendor clonati...")
+        typer.echo("Removing vendor directories...")
         for vdir in vendor_dirs:
             if vdir.exists():
                 typer.echo(f"  Rimozione {vdir}...")
                 shutil.rmtree(vdir)
 
     except Exception as e:
-        logging.error(f"Disinstallazione fallita: {e}", exc_info=verbose)
+        logging.error(f"Removal failed: {e}", exc_info=verbose)
         typer.secho(
-            f"Disinstallazione di '{method_name}' fallita.", fg=typer.colors.RED
+            f"'{method_name}' removal failed.", fg=typer.colors.RED
         )
         raise typer.Abort()
     
 @methods_app.command("validate")
 def validate(
     method_name: Annotated[
-        str, typer.Argument(help="Nome del metodo da validare."),
+        str, typer.Argument(help="Name of the method."),
     ] = None,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Mostra output dettagliato.")
+        bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
 ):
-    """Esegue check di validazione sugli ambienti installati"""
+    """Execute the specified validation command from the TOML to check if the method is correctly installed."""
     validator = Validator(METHODS_DIR)
     
     if method_name:
@@ -256,22 +298,20 @@ def validate(
         validator.validate_installed(verbose=verbose)
 
 
-# Validator e List possono rimanere se core/validation.py è compatibile,
-# altrimenti andrebbero adattati. Per ora li lasciamo.
 @methods_app.command("list")
 def list_methods():
-    """Elenca tutti i metodi disponibili ed installati."""
+    """List all available methods specifing wich one are installed or not."""
     validator = Validator(METHODS_DIR)
     registry = validator.registry
     
-    typer.secho(f"\n{'METODO':<25} {'STATO':<12} {'DESCRIZIONE'}", bold=True, underline=True)
+    typer.secho(f"\n{'METHOD':<25} {'STATE':<12} {'DESCRIPTION'}", bold=True, underline=True)
 
     for method_id, config in sorted(registry.items()):
         safe_name = config.get("title", method_id).replace(" ", "_").lower()
         env_path = ENVS_DIR / safe_name
-        is_installed = (env_path / "pixi.toml").exists()
+        is_installed = (env_path / ".install_complete").exists()
         
-        status_str = "INSTALLATO" if is_installed else "NON INSTALLATO"
+        status_str = "INSTALLED" if is_installed else "NOT INSTALLED"
         status_color = typer.colors.GREEN if is_installed else typer.colors.RED
         
         desc = config.get("description", "N/A")
@@ -294,10 +334,10 @@ def list_methods():
 @methods_app.command("help")
 def list_arguments(
     method_name: Annotated[
-        str, typer.Argument(help="Nome del metodo da consultare.")
+        str, typer.Argument(help="Name of the method.")
     ]
 ):
-    """Elenca i parametri di uno script specificato nel TOML"""
+    """List the help command defined in the method TOML and execute it to show available parameters."""
     try:
         method_path = _find_manifest(method_name)
         with open(method_path, "rb") as f:
