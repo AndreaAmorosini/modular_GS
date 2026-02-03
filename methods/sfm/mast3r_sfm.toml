@@ -54,7 +54,7 @@ path = "mast3r"
 recursive = true
 
 [[installation.git_repos]]
-url = "https://github.com/jenicek/asmk"
+url = "https://github.com/jenicek/asmk.git"
 branch = "master" 
 path = "asmk"
 recursive = true

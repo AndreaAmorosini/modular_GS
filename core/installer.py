@@ -10,28 +10,32 @@ import urllib.request
 import re
 import json
 import tomli
+import logging
 
-#TODO: Da rivedere logica di base per provare a creare meno environment in base alla combinazione di CUDA_VER:TORCH_VER
+_custom_logger = logging.getLogger("CustomInstallLog")
+
 class MethodInstaller:
-    def __init__(self, method_config: Dict, base_path: Path):
+    def __init__(self, method_config: Dict, base_path: Path, verbose: bool = False):
         self.config = method_config
         self.base_path = base_path
+        self.verbose = verbose
         self.pixi_exe = get_or_download_pixi(self.base_path)
 
         self.vendor_dir = self.base_path / "vendor"
         self.project_root = self.base_path
 
     def install(self, env_path: Path):
+        _custom_logger.info(f"Starting installation for method: {self.config.get('title', 'unknown')}")
         env_path.mkdir(parents=True, exist_ok=True)
 
         sentinel_file = env_path / ".install_complete"
         if sentinel_file.exists():
-            print(
+            logging.info(
                 f"Environment in {env_path.name} is already installed. Skipping setup."
             )
             return
 
-        print(f"Configuring Environment in {env_path}")
+        logging.info(f"Configuring Environment in {env_path}")
 
         try:
             vendor_cloned = False
@@ -44,11 +48,11 @@ class MethodInstaller:
                 toml_path = env_path / "pixi.toml"
                 with open(toml_path, "wb") as f:
                     tomli_w.dump(pixi_data, f)
-                print(f"Configuration generated at {toml_path}")
+                logging.info(f"Configuration generated at {toml_path}")
 
-                print(" Running Pixi Install ")
+                logging.info(" Running Pixi Install ")
                 subprocess.check_call(
-                    [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
+                    [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ, stdout=None if self.verbose else subprocess.DEVNULL, stderr=None if self.verbose else subprocess.DEVNULL
                 )
 
             cloned_path = self._clone_repositories()
@@ -70,19 +74,21 @@ class MethodInstaller:
                 shared_prefix = Path(manifest_path).parent / ".pixi" / "envs" / env_name
                 marker = shared_prefix / ".torch_installed"
                 if not marker.exists():
-                    print("Installing PyTorch in Shared Environment")
+                    logging.info("Installing PyTorch in Shared Environment")
                     self._run_env_commands(
                         [torch_install_cmd], env_path, manifest_path, env_name
                     )
                     marker.touch()
-                print("PyTorch already installed in Shared Environment. Skipping.")
+                logging.info(
+                    "PyTorch already installed in Shared Environment. Skipping."
+                )
                 torch_install_cmd = None  # Avoid reinstalling in build commands
                 
             build_cmds = self.config.get("installation", {}).get("build_commands", [])
             if torch_install_cmd:
                 build_cmds = [torch_install_cmd] + build_cmds
             if build_cmds:
-                print("Running Build Commands")
+                logging.info("Running Build Commands")
                 if use_shared:
                     self._run_env_commands(
                         build_cmds, env_path, manifest_path, env_name
@@ -94,17 +100,17 @@ class MethodInstaller:
                 "post_install_commands", []
             )
             if post_cmds:
-                print("Running Post-Install Commands")
+                logging.info("Running Post-Install Commands")
                 if use_shared:
                     self._run_env_commands(post_cmds, env_path, manifest_path, env_name)
                 else:
                     self._run_env_commands(post_cmds, env_path)
 
             sentinel_file.touch()
-            print("Installation Complete")
+            _custom_logger.info("Installation completed successfully.")
         except Exception as e:
-            print(f"Installation Failed: {e}")
-            print("Cleaning up...")
+            logging.error(f"Installation Failed: {e}")
+            logging.error("Cleaning up...")
             shutil.rmtree(env_path)
             if vendor_cloned:
                 shutil.rmtree(cloned_path)
@@ -147,6 +153,8 @@ class MethodInstaller:
             ],
             cwd=self.base_path,
             env=os.environ,
+            stdout=None if self.verbose else subprocess.DEVNULL,
+            stderr=None if self.verbose else subprocess.DEVNULL
         )
 
         meta = {"manifest_path": str(manifest_path), "env_name": env_name}
@@ -319,7 +327,7 @@ class MethodInstaller:
         available_wheels = []
 
         if base_wheel_url:
-            print(f"Checking wheels in {base_wheel_url}/{cuda_folder}...")
+            logging.info(f"Checking wheels in {base_wheel_url}/{cuda_folder}...")
             available_wheels = self._fetch_remote_file_list(
                 base_wheel_url, subdir=cuda_folder
             )
@@ -338,10 +346,10 @@ class MethodInstaller:
                 )
 
                 if found_wheel:
-                    print(f"-> Found wheel: {found_wheel}")
+                    logging.info(f"-> Found wheel: {found_wheel}")
                     wheel_filename = found_wheel
                 else:
-                    print(
+                    logging.info(
                         f"-> ! Warning: Wheel not found for {pkg_name}, guessing name."
                     )
                     wheel_filename = (
@@ -363,7 +371,7 @@ class MethodInstaller:
         if not repos:
             return
 
-        print(" Cloning Git Repositories ")
+        _custom_logger.info("Cloning required repositories...")
         self.vendor_dir.mkdir(parents=True, exist_ok=True)
 
         for repo in repos:
@@ -378,13 +386,17 @@ class MethodInstaller:
                 print(f"Repo {path_name} exists. Skipping clone.")
                 continue
 
-            print(f"Cloning {url} ({branch}) -> {path_name}...")
+            logging.info(f"Cloning {url} ({branch}) -> {path_name}...")
             cmd = ["git", "clone", "-b", branch, url, str(target_path)]
             if recursive:
                 cmd.append("--recursive")
 
-            subprocess.check_call(cmd)
-            return target_path
+            subprocess.check_call(
+                cmd,
+                stdout=None if self.verbose else subprocess.DEVNULL,
+                stderr=None if self.verbose else subprocess.DEVNULL,
+            )
+            # return target_path
 
     def _run_env_commands(self, commands: List[str], env_path: Path, manifest_path: Path | None = None, env_name: str | None = None):
         """Esegue comandi shell all'interno dell'ambiente Pixi."""
@@ -433,7 +445,7 @@ class MethodInstaller:
 
         for cmd_template in commands:
             cmd_str = self._resolve_template(cmd_template)
-            print(f"Running: {cmd_str}")
+            logging.info(f"Running: {cmd_str}")
             args = shlex.split(cmd_str, posix=os.name != "nt")
 
             if manifest_path and env_name:
@@ -453,9 +465,15 @@ class MethodInstaller:
                     str(env_path / "pixi.toml"),
                 ] + args
             try:
-                subprocess.check_call(full_cmd, cwd=self.base_path, env=custom_env)
+                subprocess.check_call(
+                    full_cmd,
+                    cwd=self.base_path,
+                    env=custom_env,
+                    stdout=None if self.verbose else subprocess.DEVNULL,
+                    stderr=None if self.verbose else subprocess.DEVNULL,
+                )
             except subprocess.CalledProcessError as e:
-                print(f"Command failed: {cmd_str}")
+                logging.error(f"Command failed: {cmd_str}")
                 raise e
             
     #TODO: Da rivedere
@@ -491,7 +509,11 @@ class MethodInstaller:
                 tomli_w.dump(pixi_data, f)
                 
             subprocess.check_call(
-                [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ
+                [str(self.pixi_exe), "install"],
+                cwd=env_path,
+                env=os.environ,
+                stdout=None if self.verbose else subprocess.DEVNULL,
+                stderr=None if self.verbose else subprocess.DEVNULL,
             )
 
 

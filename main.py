@@ -25,6 +25,11 @@ METHODS_DIR = PROJECT_ROOT / "methods"
 ENVS_DIR = PROJECT_ROOT / ".envs"  # Cartella dove Pixi crea gli ambienti
 VENDOR_DIR = PROJECT_ROOT / "vendor"  # Cartella per i repository clonati
 
+LOG_ALLOWLIST = [
+    "CustomValidLog",
+    "CustomInstallLog",
+]
+
 
 def _find_manifest(method_name: str) -> Path:
     """Helper to find the .toml file."""
@@ -119,7 +124,11 @@ def run(
     ] = False,
 ):
     """Execute the pipeline defined in the given TOML configuration file."""
-    setup_logging(level=logging.DEBUG if verbose else logging.INFO)
+    setup_logging(
+        level=logging.INFO,
+        verbose=verbose,
+        allowList=LOG_ALLOWLIST,
+    )    
     
     overrides = {}
     if input_file:
@@ -176,12 +185,17 @@ def install_method(
     ] = False,
 ):
     """Install a method"""
-    setup_logging(level=logging.DEBUG if verbose else logging.INFO)
-
+    setup_logging(
+        level=logging.INFO,
+        verbose=verbose,
+        allowList=LOG_ALLOWLIST,
+    )
+    
     method_path = _find_manifest(method_name)
 
     try:
-        typer.echo(f"Loading configuration from {method_path}...")
+        # typer.echo(f"Loading configuration from {method_path}...")
+        logging.info(f"Loading configuration from {method_path}...")
 
         with open(method_path, "rb") as f:
             method_config = tomli.load(f)
@@ -193,19 +207,21 @@ def install_method(
         )
         env_path = ENVS_DIR / safe_name
 
-        typer.echo(f"Installing tool env in: {env_path}")
+        # typer.echo(f"Installing tool env in: {env_path}")
+        logging.info(f"Installing tool env in: {env_path}")
 
         #Inizializziamo il nuovo Installer Pixi
         # Nota: Passiamo il dict di config e la root del progetto
-        installer = MethodInstaller(method_config, PROJECT_ROOT)
+        installer = MethodInstaller(method_config, PROJECT_ROOT, verbose=verbose)
 
         installer.install(env_path)
 
-        typer.secho(
-            f"'{method_name}' installation completed successfully!",
-            fg=typer.colors.GREEN,
-        )
-
+        # typer.secho(
+        #     f"'{method_name}' installation completed successfully!",
+        #     fg=typer.colors.GREEN,
+        # )
+        logging.info(f"'{method_name}' installation completed successfully!")
+        
     except Exception as e:
         logging.error(f"Installation Failed: {e}", exc_info=verbose)
         typer.secho(f"'{method_name}' installation failed.", fg=typer.colors.RED)
@@ -217,67 +233,93 @@ def uninstall_method(
     method_name: Annotated[
         str,
         typer.Argument(help="Name of the method to remove."),
-    ],
+    ] = None,
+    all: Annotated[
+        bool, typer.Option("--all", help="Uninstall all methods.")
+    ] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
+    subcall: Annotated[
+        bool, typer.Option(hidden = True)
+    ] = False,
 ):
     """Delete a method, delete the env folder, any repository cloned, and shared entries."""
-    setup_logging(level=logging.DEBUG if verbose else logging.INFO)
-
-    try:
-        method_path = _find_manifest(method_name)
-        with open(method_path, "rb") as f:
-            cfg = tomli.load(f)
-        method_id = method_path.stem
-        env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
-        env_path = ENVS_DIR / env_name
+    setup_logging(
+        level=logging.INFO,
+        verbose=verbose,
+        allowList=LOG_ALLOWLIST,
+    )
         
-        vendor_dirs = []
-        for repo in cfg.get("installation", {}).get("git_repos", []):
-            dir = repo.get("path")
-            if dir:
-                vendor_dirs.append(VENDOR_DIR / dir)
+    if method_name is None and all:
+        if not typer.confirm(
+                "Are you sure you want to delete all methods?",
+                abort=True,
+            ):
+                return
+
+        installed_envs = [d for d in ENVS_DIR.iterdir() if d.is_dir() and (d / ".install_complete").exists()]
+        for env_dir in installed_envs:
+            method_id = env_dir.name
+            typer.echo(f"Uninstalling method '{method_id}'...")
+            uninstall_method(method_name=method_id, verbose=verbose, subcall=True)
+        return
+    else:
+        try:
+            method_path = _find_manifest(method_name)
+            with open(method_path, "rb") as f:
+                cfg = tomli.load(f)
+            method_id = method_path.stem
+            env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
+            env_path = ENVS_DIR / env_name
             
-    except:
-        # Fallback: prova a usare il method_name direttamente se il file non si trova
-        env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
+            vendor_dirs = []
+            for repo in cfg.get("installation", {}).get("git_repos", []):
+                dir = repo.get("path")
+                if dir:
+                    vendor_dirs.append(VENDOR_DIR / dir)            
+        except:
+            # Fallback: prova a usare il method_name direttamente se il file non si trova
+            env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
 
-    if not env_path.exists():
-        typer.secho(f"No environment found in {env_path}", fg=typer.colors.YELLOW)
-        return
+        if not env_path.exists():
+            typer.secho(f"No environment found in {env_path}", fg=typer.colors.YELLOW)
+            return
 
-    if not typer.confirm(
-        f"Are you sure you want to delete '{method_id}'?",
-        abort=True,
-    ):
-        return
+        if not subcall:
+            if not typer.confirm(
+                f"Are you sure you want to delete '{method_id}'?",
+                abort=True,
+            ):
+                return
+        else:
+            typer.echo(f"Deleting '{method_id}'...")
 
-    try:
-        import shutil
-        
-        if cfg.get("installation", {}).get("shared_env", False):
-            typer.echo("Deleting shared entries from pixi.toml...")
-            _remove_shared_entries(method_id)
+        try:
+            import shutil
+            
+            if cfg.get("installation", {}).get("shared_env", False):
+                typer.echo("Deleting shared entries from pixi.toml...")
+                _remove_shared_entries(method_id)
 
-        typer.echo(f"Rimozione cartella {env_path}...")
-        shutil.rmtree(env_path)
-        typer.secho(
-            f"'{method_name}' removal completed!", fg=typer.colors.GREEN
-        )
-        
-        typer.echo("Removing vendor directories...")
-        for vdir in vendor_dirs:
-            if vdir.exists():
-                typer.echo(f"  Rimozione {vdir}...")
-                shutil.rmtree(vdir)
+            typer.echo(f"Rimozione cartella {env_path}...")
+            shutil.rmtree(env_path)
+            typer.secho(
+                f"'{method_name}' removal completed!", fg=typer.colors.GREEN
+            )
+            
+            typer.echo("Removing vendor directories...")
+            for vdir in vendor_dirs:
+                if vdir.exists():
+                    typer.echo(f"  Rimozione {vdir}...")
+                    shutil.rmtree(vdir)
 
-    except Exception as e:
-        logging.error(f"Removal failed: {e}", exc_info=verbose)
-        typer.secho(
-            f"'{method_name}' removal failed.", fg=typer.colors.RED
-        )
-        raise typer.Abort()
+        except Exception as e:
+            logging.error(f"Removal failed: {e}", exc_info=verbose)
+            typer.secho(
+                f"'{method_name}' removal failed.", fg=typer.colors.RED
+            )
+            raise typer.Abort()
     
 @methods_app.command("validate")
 def validate(

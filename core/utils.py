@@ -77,15 +77,66 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     return pixi_exe.resolve()
 
 
-
-def setup_logging(level=logging.INFO):
+#Formatter for logging
+class _ColorFormatter(logging.Formatter):
+    COLORS = {
+        logging.DEBUG: "\033[36m",  # ciano
+        logging.INFO: "\033[32m",  # verde
+        logging.WARNING: "\033[33m",  # giallo
+        logging.ERROR: "\033[31m",  # rosso
+        logging.CRITICAL: "\033[35m",  # magenta
+    }
+    RESET = "\033[0m"
+    
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        color = self.COLORS.get(record.levelno, self.RESET)
+        return f"{color}{msg}{self.RESET}" if color else msg
+    
+    
+def setup_logging(
+    level=logging.INFO,
+    verbose: bool = False,
+    allowList: list[str] | None = None,
+):
     """Logger Setup"""
-    logging.basicConfig(
-        level=level,
-        format="[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s",
+    
+    allowlist = allowList or []
+    effective_level = logging.DEBUG if verbose else level
+    
+    # logging.basicConfig(
+    #     level=effective_level,
+    #     format="[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s",
+    #     datefmt="%Y-%m-%d %H:%M:%S",
+    #     stream=sys.stdout,
+    # )
+    
+    class _AllowListFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if verbose:
+                return True
+            if record.levelno >= logging.WARNING:
+                return True
+            for name in allowlist:
+                if record.name == name or record.name.startswith(f"{name}."):
+                    return True
+            return False
+        
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = _ColorFormatter(
+        "[%(asctime)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
     )
+    handler.setFormatter(formatter)
+        
+    if not verbose:
+        handler.addFilter(_AllowListFilter())
+        
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(effective_level)
+            
     logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
