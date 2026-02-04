@@ -20,12 +20,13 @@ class MethodInstaller:
         self.base_path = base_path
         self.verbose = verbose
         self.pixi_exe = get_or_download_pixi(self.base_path)
+        self.logger = _custom_logger
 
         self.vendor_dir = self.base_path / "vendor"
         self.project_root = self.base_path
 
     def install(self, env_path: Path):
-        _custom_logger.info(f"Starting installation for method: {self.config.get('title', 'unknown')}")
+        self.logger.info(f"Starting installation for method: {self.config.get('title', 'unknown')}")
         env_path.mkdir(parents=True, exist_ok=True)
 
         sentinel_file = env_path / ".install_complete"
@@ -50,7 +51,7 @@ class MethodInstaller:
                     tomli_w.dump(pixi_data, f)
                 logging.info(f"Configuration generated at {toml_path}")
 
-                logging.info(" Running Pixi Install ")
+                self.logger.info(" Running Pixi Install ")
                 subprocess.check_call(
                     [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ, stdout=None if self.verbose else subprocess.DEVNULL, stderr=None if self.verbose else subprocess.DEVNULL
                 )
@@ -88,7 +89,7 @@ class MethodInstaller:
             if torch_install_cmd:
                 build_cmds = [torch_install_cmd] + build_cmds
             if build_cmds:
-                logging.info("Running Build Commands")
+                self.logger.info("Running Build Commands")
                 if use_shared:
                     self._run_env_commands(
                         build_cmds, env_path, manifest_path, env_name
@@ -100,14 +101,14 @@ class MethodInstaller:
                 "post_install_commands", []
             )
             if post_cmds:
-                logging.info("Running Post-Install Commands")
+                self.logger.info("Running Post-Install Commands")
                 if use_shared:
                     self._run_env_commands(post_cmds, env_path, manifest_path, env_name)
                 else:
                     self._run_env_commands(post_cmds, env_path)
 
             sentinel_file.touch()
-            _custom_logger.info("Installation completed successfully.")
+            self.logger.info("Installation completed successfully.")
         except Exception as e:
             logging.error(f"Installation Failed: {e}")
             logging.error("Cleaning up...")
@@ -371,7 +372,7 @@ class MethodInstaller:
         if not repos:
             return
 
-        _custom_logger.info("Cloning required repositories...")
+        self.logger.info("Cloning required repositories...")
         self.vendor_dir.mkdir(parents=True, exist_ok=True)
 
         for repo in repos:

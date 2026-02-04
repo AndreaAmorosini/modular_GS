@@ -30,7 +30,7 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     if pixi_exe.exists():
         return pixi_exe.resolve()
 
-    print(f"[SYSTEM] Pixi not found. Downloading...")
+    logging.info(f"[SYSTEM] Pixi not found. Downloading...")
 
     system = platform.system().lower()  # linux, darwin, windows
     machine = platform.machine().lower()  # x86_64, arm64
@@ -53,7 +53,7 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     archive_path = bin_dir / file_name
 
     try:
-        print(f"Downloading {url}...")
+        logging.info(f"Downloading {url}...")
         urllib.request.urlretrieve(url, archive_path)
 
         if file_name.endswith(".zip"):
@@ -69,7 +69,7 @@ def get_or_download_pixi(base_dir: Path) -> Path:
             os.chmod(pixi_exe, st.st_mode | stat.S_IEXEC)
 
         archive_path.unlink()  # Pulizia
-        print(f"[SYSTEM] Pixi pronto: {pixi_exe}")
+        logging.info(f"[SYSTEM] Pixi pronto: {pixi_exe}")
 
     except Exception as e:
         raise RuntimeError(f"Errore download Pixi: {e}")
@@ -123,10 +123,15 @@ def setup_logging(
             return False
         
     handler = logging.StreamHandler(sys.stdout)
+    # formatter = _ColorFormatter(
+    #     "[%(asctime)s] %(message)s",
+    #     datefmt="%Y-%m-%d %H:%M:%S",
+    # )
     formatter = _ColorFormatter(
-        "[%(asctime)s] %(message)s",
+        "%(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
     handler.setFormatter(formatter)
         
     if not verbose:

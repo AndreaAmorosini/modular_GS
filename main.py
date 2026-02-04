@@ -28,6 +28,8 @@ VENDOR_DIR = PROJECT_ROOT / "vendor"  # Cartella per i repository clonati
 LOG_ALLOWLIST = [
     "CustomValidLog",
     "CustomInstallLog",
+    "CustomRunLog",
+    "CustomValidationLog",
 ]
 
 
@@ -326,18 +328,30 @@ def validate(
     method_name: Annotated[
         str, typer.Argument(help="Name of the method."),
     ] = None,
+    all: Annotated[
+        bool, typer.Option("--all", help="Validate all installed methods.")
+    ] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
 ):
     """Execute the specified validation command from the TOML to check if the method is correctly installed."""
+    
+    setup_logging(
+        level=logging.INFO,
+        verbose=verbose,
+        allowList=LOG_ALLOWLIST,
+    )
+
     validator = Validator(METHODS_DIR)
     
-    if method_name:
+    if not all and method_name is not None:
         target_id = Path(method_name).stem
         validator.validate_method(target_id, verbose=verbose)
-    else:
+    elif all:
         validator.validate_installed(verbose=verbose)
+    else:
+        typer.secho("Specify a method name or use --all to validate all installed methods.", fg=typer.colors.YELLOW)
 
 
 @methods_app.command("list")

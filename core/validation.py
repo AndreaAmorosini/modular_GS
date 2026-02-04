@@ -8,6 +8,8 @@ from typing import Dict, Any, Tuple, Optional
 from core.utils import get_or_download_pixi
 import json
 
+_custom_logger = logging.getLogger("CustomValidationLog")
+
 class Validator:
     """Gestisce la validazione dei metodi installati tramite Pixi."""
 
@@ -17,6 +19,7 @@ class Validator:
         self.envs_dir = self.project_root / ".envs"
         self.pixi_exe = get_or_download_pixi(self.project_root)
         self.registry = self._load_method_registry()
+        self.logger = _custom_logger
 
     def _load_method_registry(self) -> Dict[str, Any]:
         """
@@ -54,7 +57,7 @@ class Validator:
         """
         config = self.registry.get(method_id)
         if not config:
-            typer.secho(f"Method '{method_id}' not found.", fg=typer.colors.RED)
+            self.logger.error(f"Method '{method_id}' not found.")
             return False
 
         # Take the command from the TOML
@@ -66,11 +69,11 @@ class Validator:
             env_path = self.envs_dir / method_id
             if (env_path / "pixi.toml").exists():
                 if verbose:
-                    typer.echo(f"No validation command found for {method_id}, but the env is present.")
+                    logging.info(f"No validation command found for {method_id}, but the env is present.")
                 return True
             else:
                 if verbose:
-                    typer.echo(f"Environment not found for {method_id} (checked in: {env_path}).")
+                    logging.info(f"Environment not found for {method_id} (checked in: {env_path}).")
                 return False
 
         # Check on Pixi environment
@@ -88,7 +91,7 @@ class Validator:
         
         if not manifest_path.exists():
             if verbose:
-                typer.secho(f"Manifest not found: {manifest_path}", fg=typer.colors.YELLOW)
+                logging.error(f"Manifest not found: {manifest_path}")
             return False
 
         # Build the Pixi command
@@ -107,7 +110,7 @@ class Validator:
 
         try:
             if verbose:
-                typer.echo(f"Executing: {' '.join(pixi_cmd)}")
+                logging.info(f"Executing: {' '.join(pixi_cmd)}")
             
             result = subprocess.run(
                 pixi_cmd,
@@ -117,16 +120,17 @@ class Validator:
                 stderr=subprocess.PIPE if not verbose else None,
                 text=True
             )
+            self.logger.debug(f"Validation command for {method_id} completed successfully.")
             return True
 
         except subprocess.CalledProcessError as e:
             if verbose:
-                typer.secho(f"Error validating {method_id}!", fg=typer.colors.RED)
+                logging.error(f"Error validating {method_id}!")
                 if e.stderr:
-                    typer.echo(f"STDERR:\n{e.stderr}")
+                    logging.error(f"STDERR:\n{e.stderr}")
             return False
         except Exception as e:
-            typer.secho(f"Exception: {e}", fg=typer.colors.RED)
+            logging.error(f"Exception: {e}", fg=typer.colors.RED)
             return False
 
     def validate_installed(self, verbose: bool):
@@ -134,16 +138,16 @@ class Validator:
         Validate all the methods that have a folder in .envs/
         """
         if not self.envs_dir.exists():
-            typer.secho("Directory .envs/ non found. No installation found.", fg=typer.colors.YELLOW)
+            self.logger.error("Directory .envs/ non found. No installation found.", fg=typer.colors.YELLOW)
             return
 
         installed_envs = [p.name for p in self.envs_dir.iterdir() if p.is_dir()]
         
         if not installed_envs:
-            typer.secho("No environments found in .envs/.", fg=typer.colors.YELLOW)
+            self.logger.error("No environments found in .envs/.", fg=typer.colors.YELLOW)
             return
 
-        typer.secho(f"Validating {len(installed_envs)} environment found...", bold=True)
+        self.logger.info(f"Validating {len(installed_envs) - 1} environment found...")
         
         success_count = 0
         checked_count = 0
@@ -152,25 +156,27 @@ class Validator:
             # Check env -> method
             if env_name not in self.registry:
                 if verbose:
-                    typer.echo(f"Skipping environment '{env_name}' (no corresponding method found in methods/).")
+                    self.logger.warning(f"Skipping environment '{env_name}' (no corresponding method found in methods/).")
                 continue
 
             checked_count += 1
-            typer.echo(f"Validating [{env_name}]... ", nl=False)
+            self.logger.info(f"Validating [{env_name}]... ")
             
             is_valid = self.validate_method(env_name, verbose=verbose)
             
             if is_valid:
-                typer.secho("OK", fg=typer.colors.GREEN, bold=True)
+                self.logger.info("OK")
                 success_count += 1
             else:
-                typer.secho("FAILED", fg=typer.colors.RED, bold=True)
+                self.logger.error("FAILED")
 
         if checked_count == 0:
-            typer.echo("No environments found corresponding to methods in registry.")
+            self.logger.warning("No environments found corresponding to methods in registry.")
             return
 
-        color = typer.colors.GREEN if success_count == checked_count else typer.colors.RED
-        typer.secho(f"\Summary: {success_count}/{checked_count} operational methods.", fg=color, bold=True)
+        if success_count == checked_count:
+            self.logger.info(f"\Summary: {success_count}/{checked_count} operational methods.")
+        else:
+            self.logger.warning(f"\Summary: {success_count}/{checked_count} operational methods.")
         
         return success_count == checked_count
