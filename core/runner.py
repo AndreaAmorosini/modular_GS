@@ -10,19 +10,21 @@ from typing import Dict, Optional, Any
 from .context import PipelineContext
 from .components.base import MethodRunner
 from .post_processing import filter_ply_by_opacity
+from .utils import RichLogger
 import logging
 
 _custom_logger = logging.getLogger("CustomRunLog")
 
 class PipelineRunner:
-    def __init__(self, pipeline_config_path: str, overrides: Optional[Dict[str, Any]] = None):
+    def __init__(self, pipeline_config_path: str, overrides: Optional[Dict[str, Any]] = None, verbose: bool = False):
         self.pipeline_path = Path(pipeline_config_path).resolve()
         self.base_path = self.pipeline_path.parent.parent 
         self.envs_base_dir = self.base_path / ".envs"
-        self.logger = _custom_logger
+        self.logger = RichLogger(debug_enabled=verbose)
+        self.verbose = verbose
         
         self.overrides = overrides or {}
-        self.context = PipelineContext(self.base_path, overrides)
+        self.context = PipelineContext(self.base_path, overrides, verbose=verbose)
 
         with open(self.pipeline_path, "rb") as f:
             self.config = tomli.load(f)
@@ -43,7 +45,7 @@ class PipelineRunner:
         #Check Skip Logic
         completed_steps = self._load_completed_steps()
         if step_name in completed_steps:
-            self.logger.info(f"\nStep [{step_name}] previously completed. Skipping execution.")
+            self.logger.warning(f"\nStep [{step_name}] previously completed. Skipping execution.")
             outputs = completed_steps[step_name]["outputs"]
         else:
             #Execution Logic
@@ -54,7 +56,7 @@ class PipelineRunner:
                  # Fallback
                  method_path = (self.base_path / "methods" / method_rel_path).resolve()
 
-            logging.info(f"\nOutput Step [{step_name}] ({method_path.stem})")
+            self.logger.debug(f"\nOutput Step [{step_name}] ({method_path.stem})")
 
             with open(method_path, "rb") as f:
                 method_config = tomli.load(f)
@@ -64,7 +66,7 @@ class PipelineRunner:
             manifest_path = env_path / "pixi.toml"
             shared_meta = env_path / "shared_env.json"
             if not manifest_path.exists() and not shared_meta.exists():
-                 logging.error(f"Errore: Ambiente {method_path.stem} non installato.")
+                 self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
                  raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
 
             # Resolving inputs from TOML
@@ -95,15 +97,16 @@ class PipelineRunner:
                 if ov_key.startswith(prefix):
                     param_name = ov_key[len(prefix):]
                     step_kwargs[param_name] = ov_val
-                    logging.info(f"[Override] {step_name}.{param_name} = {ov_val}")
+                    self.logger.debug(f"[Override] {step_name}.{param_name} = {ov_val}")
             
             # Setup Directory and Runner
             step_output_dir = self.context.get_output_dir() / step_name
             step_output_dir.mkdir(parents=True, exist_ok=True)
             
-            runner = MethodRunner(method_config, env_path, self.base_path)
+            runner = MethodRunner(method_config, env_path, self.base_path, verbose=self.verbose)
             
-            outputs = runner.run(step_inputs, step_kwargs, step_output_dir)
+            with self.logger.spinner(f"Running Step [{step_name}]..."):
+                outputs = runner.run(step_inputs, step_kwargs, step_output_dir)
             
             #Locate the final PLY file and put it in the root of the project
             search_dirs = {step_output_dir}
@@ -136,10 +139,10 @@ class PipelineRunner:
 
             if opacity_threshold is not None:                                    
                 if target_ply:
-                    logging.info(f"[Auto-Filter] Selected PLY: '{target_ply.name}' (Iteration: {highest_num})")
+                    self.logger.debug(f"[Auto-Filter] Selected PLY: '{target_ply.name}' (Iteration: {highest_num})")
                     filtered_path = target_ply.parent / f"{target_ply.stem}_filtered{target_ply.suffix}"
                     try:
-                        filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold))
+                        filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold), logger=self.logger)
                         
                         updated_existing = False
                         for key, val in outputs.items():
@@ -157,7 +160,7 @@ class PipelineRunner:
                             shutil.copy2(filtered_path, dest_path)
                             self.logger.info(f"[Output] Copied final PLY to '{dest_path.name}'")
                     except Exception as e:
-                        print(f"   [Auto-Filter] Error filtering PLY: {e}")
+                        self.logger.error(f"[Auto-Filter] Error filtering PLY: {e}")
                         if target_ply:
                             #Copy target_ply in output_dir
                             dest_path = self.context.get_output_dir() / "final_result" / target_ply.name
@@ -194,7 +197,7 @@ class PipelineRunner:
              
              if val_to_save:
                  self.context.set(pipeline_mapping_key, val_to_save)
-                 logging.info(f"-> Context[{pipeline_mapping_key}] = {val_to_save}")
+                 self.logger.debug(f"-> Context[{pipeline_mapping_key}] = {val_to_save}")
 
     def _adapt_input_structure(self, inputs: Dict[str, Any]):
         """
@@ -221,9 +224,9 @@ class PipelineRunner:
                             os.symlink(src_img, target_img)
                         else:
                             shutil.copytree(src_img, target_img)
-                        logging.info(f"[Auto-Adapt] Linked 'images' to '{target_images_name}'")
+                        self.logger.debug(f"[Auto-Adapt] Linked 'images' to '{target_images_name}'")
                     except Exception as e:
-                        logging.error(f"[Auto-Adapt] Error linking images: {e}")
+                        self.logger.error(f"[Auto-Adapt] Error linking images: {e}")
 
         # Sparse Model Folder
         target_colmap_rel = inputs.get("expected_colmap_folder")
@@ -235,9 +238,9 @@ class PipelineRunner:
                     try:
                         target_colmap.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copytree(src_colmap, target_colmap)
-                        logging.info(f"[Auto-Adapt] Copied sparse model to '{target_colmap_rel}'")
+                        self.logger.debug(f"[Auto-Adapt] Copied sparse model to '{target_colmap_rel}'")
                     except Exception as e:
-                        logging.error(f"[Auto-Adapt] Error copying sparse model: {e}")
+                        self.logger.error(f"[Auto-Adapt] Error copying sparse model: {e}")
 
         # COLMAP DB folder
         target_db_folder_rel = inputs.get("expected_db_folder")
@@ -249,9 +252,9 @@ class PipelineRunner:
                     try:
                         target_db.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src_db, target_db)
-                        logging.info(f"[Auto-Adapt] Copied database to '{target_db_folder_rel}/database.db'")
+                        self.logger.debug(f"[Auto-Adapt] Copied database to '{target_db_folder_rel}/database.db'")
                     except Exception as e:
-                        logging.info(f"[Auto-Adapt] Error copying database: {e}")
+                        self.logger.error(f"[Auto-Adapt] Error copying database: {e}")
         self._validate_and_fix_resolution(source_path, inputs)
         
 
@@ -287,23 +290,23 @@ class PipelineRunner:
         h, w = img.shape[:2]
         
         if w != target_w or h != target_h:
-            logging.info(f"[Auto-Fix] Resolution mismatch detected. Model: {target_w}x{target_h} Image: {w}x{h}")
+            self.logger.debug(f"[Auto-Fix] Resolution mismatch detected. Model: {target_w}x{target_h} Image: {w}x{h}")
             if img_dir.is_symlink():
-                logging.info(f"[Auto-Fix] Breaking symlink for {img_folder_name} to allow resizing...")
+                self.logger.debug(f"[Auto-Fix] Breaking symlink for {img_folder_name} to allow resizing...")
                 link_target = os.readlink(img_dir)
                 img_dir.unlink()
                 if not os.path.isabs(link_target):
                     link_target = str((img_dir.parent / link_target).resolve())
                 shutil.copytree(link_target, img_dir)
                 
-            logging.info(f"[Auto-Fix] Resizing images to {target_w}x{target_h}...")
+            self.logger.debug(f"[Auto-Fix] Resizing images to {target_w}x{target_h}...")
             for f in img_dir.iterdir():
                 if f.is_file() and f.suffix in extensions:
                     img = cv2.imread(str(f))
                     if img is not None:
                         resized = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
                         cv2.imwrite(str(f), resized)
-            logging.info("[Auto-Fix] Resize Complete.")
+            self.logger.debug("[Auto-Fix] Resize Complete.")
             
     def _get_colmap_dims(self, model_path: Path):
         bin_path = model_path / "cameras.bin"
@@ -334,10 +337,6 @@ class PipelineRunner:
                 pass
         return None, None
 
-
-
-
-
     def _load_completed_steps(self) -> Dict[str, Any]:
         status_file = self._get_status_file()
         if status_file.exists():
@@ -345,7 +344,7 @@ class PipelineRunner:
                 with open(status_file, "r") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"[WARN] Could not load status file: {e}")
+                self.logger.error(f"[ERROR] Could not load status file: {e}")
         return {}
 
     def _save_step_completion(self, step_name: str, outputs: Dict[str, Any]):
@@ -365,7 +364,7 @@ class PipelineRunner:
             with open(status_file, "w") as f:
                 json.dump(status, f, indent=4)
         except Exception as e:
-            logging.warning(f"[WARN] Could not save status file: {e}")
+            self.logger.error(f"[ERROR] Could not save status file: {e}")
 
     def print_help(self):
         """Print all the configurable parameter of the method"""
@@ -402,7 +401,7 @@ class PipelineRunner:
                 note = ""
                 if var == "input_file": note = " (or use --input)"
                 if var == "output_dir": note = " (or use --output)"
-                print(f"  • {var}{note}")
+                self.logger.info(f"  • {var}{note}")
         else:
             self.logger.warning("(No explicit context variables detected)")
 

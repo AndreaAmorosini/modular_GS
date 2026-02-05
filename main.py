@@ -126,7 +126,7 @@ def run(
     ] = False,
 ):
     """Execute the pipeline defined in the given TOML configuration file."""
-    setup_logging(
+    logger = setup_logging(
         level=logging.INFO,
         verbose=verbose,
         allowList=LOG_ALLOWLIST,
@@ -144,7 +144,7 @@ def run(
     if set_params:
         for param in set_params:
             if "=" not in param:
-                logging.warning(f"Malformed Parameter ignored '{param}'. Use KEY=VALUE.")
+                logger.warning(f"Malformed Parameter ignored '{param}'. Use KEY=VALUE.")
                 continue
             key, val = param.split("=", 1)
             if val.lower() == "true": val = True
@@ -159,7 +159,7 @@ def run(
 
     try:
         # Passiamo overrides direttamente nel costruttore
-        runner = PipelineRunner(str(config_file), overrides=overrides)
+        runner = PipelineRunner(str(config_file), overrides=overrides, verbose=verbose)
         
         if show_info:
             runner.print_help()
@@ -167,11 +167,11 @@ def run(
 
         runner.run()
         
-        typer.secho("Pipeline completed successfully", fg=typer.colors.GREEN)
+        logger.success("Pipeline completed successfully")
 
     except Exception as e:
-        logging.error(f"Critical Error during execution: {e}", exc_info=verbose)
-        typer.secho("Pipeline Failed.", fg=typer.colors.RED)
+        logger.error(f"Critical Error during execution: {e}")
+        logger.error("Pipeline Failed.")
         raise typer.Abort()
 
 @methods_app.command("install")
@@ -187,7 +187,7 @@ def install_method(
     ] = False,
 ):
     """Install a method"""
-    setup_logging(
+    logger = setup_logging(
         level=logging.INFO,
         verbose=verbose,
         allowList=LOG_ALLOWLIST,
@@ -197,7 +197,7 @@ def install_method(
 
     try:
         # typer.echo(f"Loading configuration from {method_path}...")
-        logging.info(f"Loading configuration from {method_path}...")
+        logger.info(f"Loading configuration from {method_path}...")
 
         with open(method_path, "rb") as f:
             method_config = tomli.load(f)
@@ -209,8 +209,7 @@ def install_method(
         )
         env_path = ENVS_DIR / safe_name
 
-        # typer.echo(f"Installing tool env in: {env_path}")
-        logging.info(f"Installing tool env in: {env_path}")
+        logger.info(f"Installing tool env in: {env_path}")
 
         #Inizializziamo il nuovo Installer Pixi
         # Nota: Passiamo il dict di config e la root del progetto
@@ -218,15 +217,11 @@ def install_method(
 
         installer.install(env_path)
 
-        # typer.secho(
-        #     f"'{method_name}' installation completed successfully!",
-        #     fg=typer.colors.GREEN,
-        # )
-        logging.info(f"'{method_name}' installation completed successfully!")
+        logger.success(f"'{method_name}' installation completed successfully!")
         
     except Exception as e:
-        logging.error(f"Installation Failed: {e}", exc_info=verbose)
-        typer.secho(f"'{method_name}' installation failed.", fg=typer.colors.RED)
+        logger.error(f"Installation Failed: {e}")
+        logger.error(f"'{method_name}' installation failed.")
         raise typer.Abort()
 
 
@@ -247,7 +242,7 @@ def uninstall_method(
     ] = False,
 ):
     """Delete a method, delete the env folder, any repository cloned, and shared entries."""
-    setup_logging(
+    logger = setup_logging(
         level=logging.INFO,
         verbose=verbose,
         allowList=LOG_ALLOWLIST,
@@ -263,7 +258,7 @@ def uninstall_method(
         installed_envs = [d for d in ENVS_DIR.iterdir() if d.is_dir() and (d / ".install_complete").exists()]
         for env_dir in installed_envs:
             method_id = env_dir.name
-            typer.echo(f"Uninstalling method '{method_id}'...")
+            logger.info(f"Uninstalling method '{method_id}'...")
             uninstall_method(method_name=method_id, verbose=verbose, subcall=True)
         return
     else:
@@ -285,7 +280,7 @@ def uninstall_method(
             env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
 
         if not env_path.exists():
-            typer.secho(f"No environment found in {env_path}", fg=typer.colors.YELLOW)
+            logger.warning(f"No environment found in {env_path}")
             return
 
         if not subcall:
@@ -295,31 +290,31 @@ def uninstall_method(
             ):
                 return
         else:
-            typer.echo(f"Deleting '{method_id}'...")
+            logger.info(f"Deleting '{method_id}'...")
 
         try:
             import shutil
             
             if cfg.get("installation", {}).get("shared_env", False):
-                typer.echo("Deleting shared entries from pixi.toml...")
+                logger.info("Deleting shared entries from pixi.toml...")
                 _remove_shared_entries(method_id)
 
-            typer.echo(f"Rimozione cartella {env_path}...")
+            logger.info(f"Rimozione cartella {env_path}...")
             shutil.rmtree(env_path)
-            typer.secho(
-                f"'{method_name}' removal completed!", fg=typer.colors.GREEN
+            logger.success(
+                f"'{method_name}' removal completed!"
             )
             
-            typer.echo("Removing vendor directories...")
+            logger.info("Removing vendor directories...")
             for vdir in vendor_dirs:
                 if vdir.exists():
-                    typer.echo(f"  Rimozione {vdir}...")
+                    logger.info(f"Rimozione {vdir}...")
                     shutil.rmtree(vdir)
 
         except Exception as e:
-            logging.error(f"Removal failed: {e}", exc_info=verbose)
-            typer.secho(
-                f"'{method_name}' removal failed.", fg=typer.colors.RED
+            logger.error(f"Removal failed: {e}")
+            logger.error(
+                f"'{method_name}' removal failed."
             )
             raise typer.Abort()
     
@@ -337,21 +332,21 @@ def validate(
 ):
     """Execute the specified validation command from the TOML to check if the method is correctly installed."""
     
-    setup_logging(
+    logger = setup_logging(
         level=logging.INFO,
         verbose=verbose,
         allowList=LOG_ALLOWLIST,
     )
 
-    validator = Validator(METHODS_DIR)
+    validator = Validator(METHODS_DIR, verbose)
     
     if not all and method_name is not None:
         target_id = Path(method_name).stem
-        validator.validate_method(target_id, verbose=verbose)
+        validator.validate_method(target_id)
     elif all:
-        validator.validate_installed(verbose=verbose)
+        validator.validate_installed()
     else:
-        typer.secho("Specify a method name or use --all to validate all installed methods.", fg=typer.colors.YELLOW)
+        logger.warning("Specify a method name or use --all to validate all installed methods.")
 
 
 @methods_app.command("list")
@@ -395,6 +390,13 @@ def list_arguments(
 ):
     """List the help command defined in the method TOML and execute it to show available parameters."""
     try:
+        
+        logger = setup_logging(
+            level=logging.INFO,
+            allowList=LOG_ALLOWLIST,
+        )    
+
+        
         method_path = _find_manifest(method_name)
         with open(method_path, "rb") as f:
             cfg = tomli.load(f)
@@ -402,14 +404,14 @@ def list_arguments(
         env_path = ENVS_DIR / env_name
         
         if not(env_path / "pixi.toml").exists():
-            typer.secho(f"Environment '{env_name}' not found. First esecute the install command", fg=typer.colors.RED)
+            logger.warning(f"Environment '{env_name}' not found. First esecute the install command")
             return
         
         help_section = cfg.get("execution", {}).get("help", {})
         help_command = help_section.get("help_command") if help_section else None
         
         if not help_command:
-            typer.secho("No help_command found in the specified TOML", fg=typer.colors.YELLOW)
+            logger.waring("No help_command found in the specified TOML")
             
         vendor_str = str(VENDOR_DIR).replace("\\", "/")
         root_str = str(PROJECT_ROOT).replace("\\", "/")
@@ -420,11 +422,11 @@ def list_arguments(
         args = shlex.split(cmd_str, posix=os.name != "nt")
         full_cmd = [str(pixi_exe), "run", "--manifest-path", str(env_path / "pixi.toml")] + args
         
-        typer.secho(f"Executing: {cmd_str}\n", fg=typer.colors.CYAN)
+        logger.info(f"Executing: {cmd_str}\n")
         subprocess.check_call(full_cmd, cwd=PROJECT_ROOT)
             
     except Exception as e:
-        print(f"[ERROR] Cannota invoke --help parameter on specified script: {e}")
+        logger.error(f"[ERROR] Cannota invoke --help parameter on specified script: {e}")
 
 
 

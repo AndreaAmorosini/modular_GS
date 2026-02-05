@@ -1,0 +1,23 @@
+title = "Images to Gaussian Splatting (MASt3R)"
+description = "Usa immagini come input, calcola SfM con MASt3R e allena Gaussian Splatting 2D."
+
+[global_options]
+filter_opacity_threshold = 0.1
+
+[[steps]]
+name = "StructureFromMotion"
+method = "methods/sfm/mast3r_sfm.toml"
+[steps.inputs]
+# Passa una cartella immagini con --input
+images_dir = "{{context.input_file}}"
+# Chiavi per propagare l'output allo step successivo
+output_key = "sfm_ready_path"
+primary_output = "model_dir"
+
+[[steps]]
+name = "Training"
+method = "methods/splat/2d_gaussian_splatting.toml"
+[steps.inputs]
+source_path = "{{context.StructureFromMotion_model_dir}}"
+[steps.kwargs]
+iterations = 50000

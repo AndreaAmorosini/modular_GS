@@ -2,6 +2,7 @@ import logging
 import jinja2
 from pathlib import Path
 from typing import Dict, Any, Optional
+from .utils import RichLogger
 
 class PipelineContext:
     """
@@ -9,8 +10,8 @@ class PipelineContext:
     And resolve Jinja templates for variables.
     """
 
-    def __init__(self, project_root: Path, override_args: Optional[Dict[str, Any]] = None):
-        self.logger = logging.getLogger("PipelineContext")
+    def __init__(self, project_root: Path, override_args: Optional[Dict[str, Any]] = None, verbose: bool = False):
+        self.logger = RichLogger(debug_enabled=verbose)
         self.data = {"project_root": str(project_root)}
         
         # Gestione sicura di override_args (evita NoneType error)
@@ -38,12 +39,12 @@ class PipelineContext:
     def _setup_dirs(self):
         """Setup of the outputs dirs"""
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.logger.info(f"Pipeline output directory: {self.output_dir}")
+        self.logger.debug(f"Pipeline output directory: {self.output_dir}")
         
         #Check on status file
         restart = self.data.get("restart", False)
         if (self.output_dir / "pipeline_status.json").exists() and not restart:
-            self.logger.info("Found pipeline_status.json.")
+            self.logger.debug("Found pipeline_status.json.")
             return
         
         if any(self.output_dir.iterdir()):
@@ -53,7 +54,7 @@ class PipelineContext:
                     shutil.rmtree(item)
                 else:
                     item.unlink()
-            self.logger.info(f"Cleaned output directory: {self.output_dir}")
+            self.logger.debug(f"Cleaned output directory: {self.output_dir}")
 
     def resolve(self, template_str: Any) -> Any:
         """

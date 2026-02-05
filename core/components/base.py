@@ -3,11 +3,11 @@ import os
 import jinja2
 from pathlib import Path
 from typing import Dict, Any, Optional
-from core.utils import get_or_download_pixi
+from core.utils import get_or_download_pixi, RichLogger
 import json
 
 class MethodRunner:
-    def __init__(self, method_config: dict, env_path: Path, base_path: Path):
+    def __init__(self, method_config: dict, env_path: Path, base_path: Path, verbose: bool = False):
         self.config = method_config
         self.title = method_config.get("title", "Unknown Method")
         self.method_id = env_path.name
@@ -15,6 +15,8 @@ class MethodRunner:
         self.base_path = base_path
         self.project_root = base_path # Alias
         self.pixi_exe = get_or_download_pixi(base_path)
+        self.logger = RichLogger(debug_enabled=verbose)
+        self.verbose = verbose
         
         # Vendor path: vendor/specified_path
         self.vendor_dir = base_path / "vendor"
@@ -31,13 +33,13 @@ class MethodRunner:
         Returns:
             Dict[str, str]: Mappa degli output generati {"key": "/abs/path"}
         """
-        print(f" Running Method: {self.title} ")
+        self.logger.debug(f"Running Method: {self.title} ")
         
         exec_config = self.config.get("execution", {})
         raw_cmd = exec_config.get("command")
         
         if not raw_cmd:
-             print("Warning: No execution command found. Skipping.")
+             self.logger.warning("Warning: No execution command found. Skipping.")
              return {}
 
         # Prepara Variabili Template
@@ -69,7 +71,7 @@ class MethodRunner:
         template_vars["outputs"] = resolved_outputs
         
         final_cmd = self._render_string(raw_cmd, template_vars)
-        print(f"Payload comando:\n{final_cmd.strip()}")
+        self.logger.debug(f"Payload comando:\n{final_cmd.strip()}")
         
         manifest_path = self.env_path / "pixi.toml"
         env_name = None
@@ -100,10 +102,12 @@ class MethodRunner:
             subprocess.check_call(
                 cmd_list,
                 cwd=self.project_root,
-                env=os.environ
+                env=os.environ,
+                stdout=None if self.verbose else subprocess.DEVNULL,
+                stderr=None if self.verbose else subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError as e:
-            print(f"Execution failed with output: {e}")
+            self.logger.error(f"Execution failed with output: {e}")
             raise e
             
         return resolved_outputs

@@ -5,21 +5,21 @@ import shlex
 import typer
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
-from core.utils import get_or_download_pixi
+from core.utils import get_or_download_pixi, RichLogger
 import json
 
-_custom_logger = logging.getLogger("CustomValidationLog")
 
 class Validator:
     """Gestisce la validazione dei metodi installati tramite Pixi."""
 
-    def __init__(self, methods_dir: Path):
+    def __init__(self, methods_dir: Path, verbose: bool = False):
         self.methods_dir = methods_dir
         self.project_root = methods_dir.parent
         self.envs_dir = self.project_root / ".envs"
         self.pixi_exe = get_or_download_pixi(self.project_root)
         self.registry = self._load_method_registry()
-        self.logger = _custom_logger
+        self.verbose = verbose
+        self.logger = RichLogger(debug_enabled=verbose)
 
     def _load_method_registry(self) -> Dict[str, Any]:
         """
@@ -45,19 +45,19 @@ class Validator:
 
                 registry[method_id] = config
             except Exception as e:
-                logging.warning(f"Failed to load: {toml_file}: {e}")
+                self.logger.error(f"Failed to load: {toml_file}: {e}")
         return registry
 
     def find_method_config(self, method_id: str) -> Optional[Dict[str, Any]]:
         return self.registry.get(method_id)
 
-    def validate_method(self, method_id: str, verbose: bool = False) -> bool:
+    def validate_method(self, method_id: str) -> bool:
         """
         Execute the validation command specified in the TOML using 'pixi run'.
         """
         config = self.registry.get(method_id)
         if not config:
-            self.logger.error(f"Method '{method_id}' not found.")
+            self.logger.warning(f"Method '{method_id}' not found.")
             return False
 
         # Take the command from the TOML
@@ -68,12 +68,10 @@ class Validator:
             # If no validation command is specified only check for env existence
             env_path = self.envs_dir / method_id
             if (env_path / "pixi.toml").exists():
-                if verbose:
-                    logging.info(f"No validation command found for {method_id}, but the env is present.")
+                self.logger.info(f"No validation command found for {method_id}, but the env is present.")
                 return True
             else:
-                if verbose:
-                    logging.info(f"Environment not found for {method_id} (checked in: {env_path}).")
+                self.logger.debug(f"Environment not found for {method_id} (checked in: {env_path}).")
                 return False
 
         # Check on Pixi environment
@@ -90,8 +88,7 @@ class Validator:
                 env_name = meta.get("env_name", None)
         
         if not manifest_path.exists():
-            if verbose:
-                logging.error(f"Manifest not found: {manifest_path}")
+            self.logger.error(f"Manifest not found: {manifest_path}")
             return False
 
         # Build the Pixi command
@@ -109,42 +106,40 @@ class Validator:
         pixi_cmd += shlex.split(cmd_str)
 
         try:
-            if verbose:
-                logging.info(f"Executing: {' '.join(pixi_cmd)}")
+            self.logger.debug(f"Executing: {' '.join(pixi_cmd)}")
             
             result = subprocess.run(
                 pixi_cmd,
                 check=True,
                 cwd=self.project_root,
-                stdout=subprocess.PIPE if not verbose else None,
-                stderr=subprocess.PIPE if not verbose else None,
+                stdout=subprocess.PIPE if not self.verbose else None,
+                stderr=subprocess.PIPE if not self.verbose else None,
                 text=True
             )
             self.logger.debug(f"Validation command for {method_id} completed successfully.")
             return True
 
         except subprocess.CalledProcessError as e:
-            if verbose:
-                logging.error(f"Error validating {method_id}!")
-                if e.stderr:
-                    logging.error(f"STDERR:\n{e.stderr}")
+            self.logger.error(f"Error validating {method_id}!")
+            if e.stderr:
+                self.logger.error(f"STDERR:\n{e.stderr}")
             return False
         except Exception as e:
-            logging.error(f"Exception: {e}", fg=typer.colors.RED)
+            self.logger.error(f"Exception: {e}")
             return False
 
-    def validate_installed(self, verbose: bool):
+    def validate_installed(self):
         """
         Validate all the methods that have a folder in .envs/
         """
         if not self.envs_dir.exists():
-            self.logger.error("Directory .envs/ non found. No installation found.", fg=typer.colors.YELLOW)
+            self.logger.error("Directory .envs/ non found. No installation found.")
             return
 
         installed_envs = [p.name for p in self.envs_dir.iterdir() if p.is_dir()]
         
         if not installed_envs:
-            self.logger.error("No environments found in .envs/.", fg=typer.colors.YELLOW)
+            self.logger.error("No environments found in .envs/.")
             return
 
         self.logger.info(f"Validating {len(installed_envs) - 1} environment found...")
@@ -155,28 +150,29 @@ class Validator:
         for env_name in installed_envs:
             # Check env -> method
             if env_name not in self.registry:
-                if verbose:
+                if env_name != "_shared":
                     self.logger.warning(f"Skipping environment '{env_name}' (no corresponding method found in methods/).")
                 continue
 
             checked_count += 1
             self.logger.info(f"Validating [{env_name}]... ")
             
-            is_valid = self.validate_method(env_name, verbose=verbose)
+            with self.logger.spinner("Validating... "):
+                is_valid = self.validate_method(env_name)
             
             if is_valid:
-                self.logger.info("OK")
+                self.logger.success(f"[{env_name}] OK")
                 success_count += 1
             else:
-                self.logger.error("FAILED")
+                self.logger.error(f"[{env_name}] FAILED")
 
         if checked_count == 0:
             self.logger.warning("No environments found corresponding to methods in registry.")
             return
 
         if success_count == checked_count:
-            self.logger.info(f"\Summary: {success_count}/{checked_count} operational methods.")
+            self.logger.success(f"\nSummary: {success_count}/{checked_count} operational methods.")
         else:
-            self.logger.warning(f"\Summary: {success_count}/{checked_count} operational methods.")
+            self.logger.warning(f"\nSummary: {success_count}/{checked_count} operational methods.")
         
         return success_count == checked_count
