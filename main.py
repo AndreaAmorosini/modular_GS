@@ -342,7 +342,7 @@ def validate(
     
     if not all and method_name is not None:
         target_id = Path(method_name).stem
-        validator.validate_method(target_id)
+        validator.validate_method(target_id, all=False)
     elif all:
         validator.validate_installed()
     else:

@@ -20,7 +20,7 @@ class PipelineRunner:
         self.pipeline_path = Path(pipeline_config_path).resolve()
         self.base_path = self.pipeline_path.parent.parent 
         self.envs_base_dir = self.base_path / ".envs"
-        self.logger = RichLogger(debug_enabled=verbose)
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.verbose = verbose
         
         self.overrides = overrides or {}

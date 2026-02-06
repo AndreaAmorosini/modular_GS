@@ -208,7 +208,7 @@ class RichLogger:
         
     @contextmanager
     def spinner(self, message: str, spinner: str = "dots"):
-        if self._console is None or Status is None:
+        if self.verbose or self._console is None or Status is None:
             self.info(message + " ...")
             yield
             return

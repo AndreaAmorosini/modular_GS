@@ -15,7 +15,7 @@ class MethodRunner:
         self.base_path = base_path
         self.project_root = base_path # Alias
         self.pixi_exe = get_or_download_pixi(base_path)
-        self.logger = RichLogger(debug_enabled=verbose)
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.verbose = verbose
         
         # Vendor path: vendor/specified_path

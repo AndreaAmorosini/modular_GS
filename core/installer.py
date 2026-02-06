@@ -20,7 +20,7 @@ class MethodInstaller:
         self.base_path = base_path
         self.verbose = verbose
         self.pixi_exe = get_or_download_pixi(self.base_path)
-        self.logger = RichLogger(debug_enabled=verbose)
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
 
         self.vendor_dir = self.base_path / "vendor"
         self.project_root = self.base_path
@@ -43,7 +43,8 @@ class MethodInstaller:
 
             use_shared = self.config.get("installation", {}).get("shared_env", False)
             if use_shared:
-                manifest_path, env_name = self._install_shared_env(env_path)
+                with self.logger.spinner("Setting up and linking Shared Environment"):
+                    manifest_path, env_name = self._install_shared_env(env_path)
             else:
                 pixi_data = self._generate_pixi_structure()
                 toml_path = env_path / "pixi.toml"

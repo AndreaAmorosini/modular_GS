@@ -1,0 +1,71 @@
+title = "Video to Gaussian Splatting (MASt3R)"
+description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
+
+[global_options]
+filter_opacity_threshold = 0.15
+
+[[steps]]
+name = "Extraction"
+method = "methods/preprocess/sharp_frames.toml"
+
+[steps.inputs]
+video = "{{context.input_file}}"
+
+[[steps]]
+name = "StructureFromMotion"
+method = "methods/sfm/mast3r_sfm.toml"
+[steps.inputs]
+images_dir = "{{context.Extraction_sharp_images}}"
+[steps.kwargs]
+scenegraph_type = "swin"
+
+output_key = "sfm_ready_path"
+primary_output = "model_dir"
+
+
+[[steps]]
+name = "Training"
+method = "methods/splat/fastgs.toml"
+[steps.inputs]
+#{StepName}_{output_name}
+source_path = "{{context.StructureFromMotion_model_dir}}"
+[steps.kwargs]
+#DEFAULT
+# iterations = 30000
+# densify_grad_threshold = 0.0002
+# grad_abs_thresh = 0.0012
+# grad_thresh = 0.0002
+# opacity_reset_interval = 3000
+# lambda_dsssim = 0.2
+# dense = 0.001
+# position_lr_final = 0.0000016
+# shfeature_lr = 0.005
+# feature_lr = 0.0025
+# loss_thresh = 0.1
+#TESTING
+iterations = 200000
+densify_grad_threshold = 0.0008
+grad_abs_thresh = 0.004
+grad_thresh = 0.0008
+opacity_reset_interval = 1000
+lambda_dsssim = 0.4
+dense = 0
+position_lr_final = 0.000001
+shfeature_lr = 0.05
+feature_lr = 0.0050
+loss_thresh = 0.01
+
+[[steps]]
+name = "GSFix3D"
+method = "methods/postprocess/gsfix3d.toml"
+[steps.inputs]
+gs_model_path = "{{context.Training_trained_model_dir}}"
+sfm_path = "{{context.StructureFromMotion_model_dir}}"
+[steps.kwargs]
+skip_finetune = false
+hf_checkpoint_repo = "goldoak1421/gsfixer-full"
+recon_method_type = "modular_gs"
+num_novel_views = 20
+refine_iters = 20
+refine_kf_iters = 50
+finetune_config = "config/finetune_gsfixer.yaml"

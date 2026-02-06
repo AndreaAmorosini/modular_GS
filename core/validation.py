@@ -19,7 +19,7 @@ class Validator:
         self.pixi_exe = get_or_download_pixi(self.project_root)
         self.registry = self._load_method_registry()
         self.verbose = verbose
-        self.logger = RichLogger(debug_enabled=verbose)
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
 
     def _load_method_registry(self) -> Dict[str, Any]:
         """
@@ -51,7 +51,7 @@ class Validator:
     def find_method_config(self, method_id: str) -> Optional[Dict[str, Any]]:
         return self.registry.get(method_id)
 
-    def validate_method(self, method_id: str) -> bool:
+    def validate_method(self, method_id: str, all: bool) -> bool:
         """
         Execute the validation command specified in the TOML using 'pixi run'.
         """
@@ -112,11 +112,11 @@ class Validator:
                 pixi_cmd,
                 check=True,
                 cwd=self.project_root,
-                stdout=subprocess.PIPE if not self.verbose else None,
-                stderr=subprocess.PIPE if not self.verbose else None,
+                stdout=subprocess.PIPE if self.verbose and not all else None,
+                stderr=subprocess.PIPE if self.verbose and not all else None,
                 text=True
             )
-            self.logger.debug(f"Validation command for {method_id} completed successfully.")
+            self.logger.success(f"Validation command for {method_id} completed successfully.")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -158,7 +158,7 @@ class Validator:
             self.logger.info(f"Validating [{env_name}]... ")
             
             with self.logger.spinner("Validating... "):
-                is_valid = self.validate_method(env_name)
+                is_valid = self.validate_method(env_name, all=True)
             
             if is_valid:
                 self.logger.success(f"[{env_name}] OK")

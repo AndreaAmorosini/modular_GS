@@ -11,7 +11,7 @@ class PipelineContext:
     """
 
     def __init__(self, project_root: Path, override_args: Optional[Dict[str, Any]] = None, verbose: bool = False):
-        self.logger = RichLogger(debug_enabled=verbose)
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.data = {"project_root": str(project_root)}
         
         # Gestione sicura di override_args (evita NoneType error)
