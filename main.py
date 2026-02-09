@@ -240,6 +240,7 @@ def uninstall_method(
     subcall: Annotated[
         bool, typer.Option(hidden = True)
     ] = False,
+    from_CLI: bool = True,
 ):
     """Delete a method, delete the env folder, any repository cloned, and shared entries."""
     logger = setup_logging(
@@ -249,11 +250,13 @@ def uninstall_method(
     )
         
     if method_name is None and all:
-        if not typer.confirm(
-                "Are you sure you want to delete all methods?",
-                abort=True,
-            ):
-                return
+        
+        if not from_CLI:
+            if not typer.confirm(
+                    "Are you sure you want to delete all methods?",
+                    abort=True,
+                ):
+                    return
 
         installed_envs = [d for d in ENVS_DIR.iterdir() if d.is_dir() and (d / ".install_complete").exists()]
         for env_dir in installed_envs:
@@ -284,11 +287,12 @@ def uninstall_method(
             return
 
         if not subcall:
-            if not typer.confirm(
-                f"Are you sure you want to delete '{method_id}'?",
-                abort=True,
-            ):
-                return
+            if not from_CLI:
+                if not typer.confirm(
+                    f"Are you sure you want to delete '{method_id}'?",
+                    abort=True,
+                ):
+                    return
         else:
             logger.info(f"Deleting '{method_id}'...")
 
