@@ -8,6 +8,9 @@ from typing import List, Optional
 import subprocess
 import os
 import shlex
+import shutil
+import sys
+import subprocess
 
 from core.runner import PipelineRunner
 from core.installer import MethodInstaller
@@ -173,6 +176,32 @@ def run(
         logger.error(f"Critical Error during execution: {e}")
         logger.error("Pipeline Failed.")
         raise typer.Abort()
+    
+@app.command("web")
+def start_web_interface():
+    """Start the Streamlit web interface for managing pipelines and methods."""
+    logger = setup_logging(
+        level=logging.INFO,
+        allowList=LOG_ALLOWLIST,
+    )
+
+    web_ui = "core/gui/web_ui.py"
+    streamlit_bin = shutil.which("streamlit")
+    if streamlit_bin:
+        cmd = [streamlit_bin, "run", web_ui]
+    else:
+        logger.warning(
+            "Streamlit not found in PATH. Trying to run with 'python -m streamlit'..."
+        )
+        cmd = [sys.executable, "-m", "streamlit", "run", web_ui]
+
+    try:
+        logger.info(f"Starting Web Interface...")
+        subprocess.check_call(cmd, cwd=PROJECT_ROOT, stdout=None, stderr=None)
+    except Exception as e:
+        logger.error(f"Failed to start Streamlit: {e}")
+        raise typer.Abort()
+
 
 @methods_app.command("install")
 def install_method(
@@ -251,7 +280,7 @@ def uninstall_method(
         
     if method_name is None and all:
         
-        if not from_CLI:
+        if from_CLI:
             if not typer.confirm(
                     "Are you sure you want to delete all methods?",
                     abort=True,
@@ -287,7 +316,7 @@ def uninstall_method(
             return
 
         if not subcall:
-            if not from_CLI:
+            if from_CLI:
                 if not typer.confirm(
                     f"Are you sure you want to delete '{method_id}'?",
                     abort=True,
@@ -386,6 +415,7 @@ def list_methods():
         if meta_info:
             typer.secho(f"   └── {', '.join(meta_info)}", fg=typer.colors.BRIGHT_BLACK)
             
+
 @methods_app.command("help")
 def list_arguments(
     method_name: Annotated[

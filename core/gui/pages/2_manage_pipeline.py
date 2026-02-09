@@ -20,22 +20,29 @@ while not (project_root / "pipelines").exists():
 
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
+    
+try:
+    from core.gui.web_ui import render_sidebar
+except ImportError as e:
+    print(f"Error importing render_sidebar: {e}")
 
 st.set_page_config(
     page_title="ModularGS - Pipeline Manager", layout="wide", page_icon="🧭"
 )
+# render_sidebar(project_root)
 st.title("Pipeline Manager")
 
-base_path_input = st.sidebar.text_input("Project Root Path", value=str(project_root))
-base_path = Path(base_path_input)
+# base_path_input = st.sidebar.text_input("Project Root Path", value=str(project_root))
+base_path = Path(project_root)
+
 
 envs_path = base_path / ".envs"
 if not envs_path.exists():
-    st.sidebar.warning("Cartella '.envs' non trovata nella root specificata.")
+    st.sidebar.warning("Folder '.envs' not found.")
 
 pipelines_dir = base_path / "pipelines"
 if not pipelines_dir.exists():
-    st.warning("Cartella 'pipelines' non trovata nella root del progetto.")
+    st.warning("Folder 'pipelines' not found.")
     st.stop()
 
 
@@ -52,19 +59,12 @@ def parse_toml_file(p: Path):
 
 
 def required_methods_from_pipeline(parsed: dict):
-    # TODO: Da fixare
     req = []
     steps = parsed.get("steps", []) or []
-    print(f"Parsing pipeline steps: {steps}")
     for i in steps:
-        print(f"Step: {i}")
-        print(f"Step method name: {i.get('method')}")
-    step_sections = parsed.get("step", {}) or {}
-    for step_name in steps:
-        step_conf = step_sections.get(step_name, {}) or {}
-        method = step_conf.get("method")
-        if method:
-            req.append(method)
+        method_name = i.get("method").split("/")[-1].split(".")[0] or ""
+        if method_name != "":
+            req.append(method_name)
     return req
 
 
@@ -87,7 +87,7 @@ st.sidebar.markdown(f"Installed methods: **{len(installed)}**")
 for pf in pipeline_files:
     parsed = parse_toml_file(pf)
     if "_parse_error" in parsed:
-        st.error(f"{pf.name} — Errore parsing: {parsed['_parse_error']}")
+        st.error(f"{pf.name} — Error parsing: {parsed['_parse_error']}")
         continue
 
     meta = parsed.get("pipeline", {}) or {}
@@ -99,22 +99,24 @@ for pf in pipeline_files:
 
     header = f"{name} — {pf.name}"
     if runnable:
-        st.success(header + " — Pronta per l'esecuzione")
+        st.success(header + " — Ready for execution")
     else:
-        st.error(header + f" — Mancano strumenti: {', '.join(missing)}")
+        st.error(header + f" — Missing Tools: {', '.join(missing)}")
 
-    with st.expander("Dettagli pipeline"):
+    with st.expander("Pipeline Details"):
         if desc:
             st.write(desc)
-        st.write("Passi (ordine):")
-        steps = meta.get("steps", []) or []
+        st.write("Steps:")
+        steps = required
         for step_name in steps:
             step_conf = parsed.get("step", {}).get(step_name, {}) or {}
-            method = step_conf.get("method", "<no-method>")
-            status = "✓" if method in installed else "✗"
-            st.write(f"- {step_name}: {method} {status}")
+            # method = step_conf.get("method", "<no-method>")
+            status = "✓" if step_name in installed else "✗"
+            # st.write(f"- {step_name}: {method} {status}")
+            st.write(f"- {step_name}: {status}")
+
         st.write("File:", pf.name)
 
     st.divider()
 
-st.info("Aggiorna la pagina per ricaricare lo stato dei metodi installati.")
+st.info("Reload the page to update the pipeline status after installing/uninstalling methods.")
