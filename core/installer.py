@@ -39,8 +39,6 @@ class MethodInstaller:
         self.logger.debug(f"Configuring Environment in {env_path}")
 
         try:
-            vendor_cloned = False
-
             use_shared = self.config.get("installation", {}).get("shared_env", False)
             if use_shared:
                 with self.logger.spinner("Setting up and linking Shared Environment"):
@@ -56,9 +54,8 @@ class MethodInstaller:
                     subprocess.check_call(
                         [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ, stdout=None if self.verbose else subprocess.DEVNULL, stderr=None if self.verbose else subprocess.DEVNULL
                     )
-
-            cloned_path = self._clone_repositories()
-            vendor_cloned = True
+            
+            self._clone_repositories()
             
             env_cfg = self.config.get("environment", {})
             torch_ver = env_cfg.get("torch_version", None)
@@ -72,18 +69,8 @@ class MethodInstaller:
                     f"--index-url https://download.pytorch.org/whl/cu{cuda_ver}"
                 )
                 
-            if use_shared and torch_install_cmd and manifest_path and env_name:
-                shared_prefix = Path(manifest_path).parent / ".pixi" / "envs" / env_name
-                marker = shared_prefix / ".torch_installed"
-                if not marker.exists():
-                    self.logger.debug("Installing PyTorch in Shared Environment")
-                    self._run_env_commands(
-                        [torch_install_cmd], env_path, manifest_path, env_name
-                    )
-                    marker.touch()
-                self.logger.debug(
-                    "PyTorch already installed in Shared Environment. Skipping."
-                )
+            if use_shared and torch_install_cmd:
+                self.logger.debug("Installing PyTorch in Shared Environment")
                 torch_install_cmd = None  # Avoid reinstalling in build commands
                 
             build_cmds = self.config.get("installation", {}).get("build_commands", [])
@@ -112,10 +99,7 @@ class MethodInstaller:
             # self.logger.success("Installation completed successfully.")
         except Exception as e:
             self.logger.error(f"Installation Failed: {e}")
-            self.logger.warning("Cleaning up...")
-            shutil.rmtree(env_path)
-            if vendor_cloned:
-                shutil.rmtree(cloned_path)
+            self._cleanup_failed_install(env_path)
             raise
 
     def _install_shared_env(self, env_path: Path) -> tuple[Path, str]:
@@ -181,6 +165,7 @@ class MethodInstaller:
             },
             "dependencies": {"python": "3.10.*", "pip": "*"},
             "pypi-dependencies": {},
+            "pypi-options": {},
             "feature": {},
             "environments": {},
             "system-requirements": {"linux": "5.4"},
@@ -214,11 +199,21 @@ class MethodInstaller:
             "ninja": "*",
         }
         base_pypi = {}
+        
+        if torch_ver and torchvision_ver:
+            index_url = f"https://download.pytorch.org/whl/cu{cuda_ver}"
+            pypi_opts = pixi.setdefault("pypi-options", {})
+            extra_urls = pypi_opts.setdefault("extra-index-urls", [])
+            if index_url not in extra_urls:
+                extra_urls.append(index_url)
+                
+            base_pypi["torch"] = f"=={torch_ver}+cu{cuda_ver}"
+            base_pypi["torchvision"] = f"=={torchvision_ver}+cu{cuda_ver}"
 
         pixi.setdefault("feature", {})
         pixi["feature"][base_feature] = {
             "dependencies": base_deps,
-            # "pypi-dependencies": base_pypi,
+            "pypi-dependencies": base_pypi,
         }
         return base_feature
 
@@ -478,47 +473,90 @@ class MethodInstaller:
                 self.logger.error(f"Command failed: {cmd_str}")
                 raise e
             
-    #TODO: Da rivedere
-    def _cleanup_build_dep(self, env_path: Path, pixi_data: Dict):
-        """
-        Perform a cleanup inside the newly created env to remove all packages necessary only for compiling.
-        """
+    def _cleanup_failed_install(self, env_path: Path):
+        self.logger.warning(f"Cleaning up failed installation at {env_path}...")
         
-        #Packages removable
-        build_pkgs = [
-            "gxx_linux-64",
-            "gcc_linux-64",
-            "make",
-            "cmake",
-            "cuda-nvcc",
-            # "cuda-toolkit",
-            # "cuda-command-line-tools",
-            "cuda-cudart-dev",
-            "cuda-driver-dev",
-            "cuda-cccl",
-        ]
-
-        modified = False
-        deps = pixi_data.get("dependencies", {})
-        for pkg in build_pkgs:
-            if pkg in deps:
-                del deps[pkg]
-                modified = True
+        if self.config.get("installation", {}).get("shared_env", False):
+            try:
+                method_id = self.config.get("__id__", env_path.name)
+                self._remove_shared_entries(method_id)
+            except Exception as e:
+                self.logger.error(f"Error during shared environment cleanup: {e}")
                 
-        if modified:
-            print("Cleaning up Build Dependencies...")
-            with open(env_path / "pixi.toml", "wb") as f:
-                tomli_w.dump(pixi_data, f)
+            repos = self.config.get("installation", {}).get("git_repos", [])
+            for repo in repos:
+                url = repo.get("url")
+                path_name = repo.get("path", url.split("/")[-1].replace(".git", ""))
                 
-            subprocess.check_call(
-                [str(self.pixi_exe), "install"],
-                cwd=env_path,
-                env=os.environ,
-                stdout=None if self.verbose else subprocess.DEVNULL,
-                stderr=None if self.verbose else subprocess.DEVNULL,
-            )
-
-
+                if path_name:
+                    vendor_path = self.vendor_dir / path_name
+                    if vendor_path.exists():
+                        self.logger.info(f"Removing vendor directory: {vendor_path}")
+                        try:
+                            shutil.rmtree(vendor_path)
+                        except Exception as e:
+                            self.logger.error(f"Error removing vendor directory {vendor_path}: {e}")
+                            
+            if env_path.exists():
+                self.logger.info(f"Removing environment directory: {env_path}")
+                try:
+                    shutil.rmtree(env_path)
+                except Exception as e:
+                    self.logger.error(f"Error removing environment directory {env_path}: {e}")
+                    
+    def _remove_shared_entries(self, method_id: str):
+        shared_dir = self.base_path / ".envs" / "_shared"
+        shared_manifest = shared_dir / "pixi.toml"
+        shared_envs_dir = shared_dir / ".pixi" / "envs"
+        
+        if not shared_manifest.exists():
+            self.logger.debug(f"No shared manifest found at {shared_manifest}. Skipping shared cleanup.")
+            return
+        
+        with open(shared_manifest, "rb") as f:
+            pixi = tomli.load(f)
+            
+        tool_feature = f"tool-{method_id}"
+        envs = pixi.get("environments", {})
+        features = pixi.get("feature", {})
+        
+        envs_to_remove = [name for name, cfg in envs.items() if tool_feature in cfg.get("features", [])]
+        
+        for name in envs_to_remove:
+            if name in envs:
+                del envs[name]
+                
+        if tool_feature in features:
+            del features[tool_feature]
+            
+        used_features = set()
+        for cfg in envs.values():
+            used_features.update(cfg.get("features", []))
+            
+        base_features = [f for f in features.keys() if f.startswith("base-")]
+        for base in base_features:
+            if base not in used_features:
+                del features[base]
+                
+        pixi["environments"] = envs
+        pixi["feature"] = features
+        
+        with open(shared_manifest, "wb") as f:
+            tomli_w.dump(pixi, f)
+            
+        if shared_envs_dir.exists():
+            for env_name in envs_to_remove:
+                env_path = shared_envs_dir / env_name
+                if env_path.exists():
+                    self.logger.info(f"Removing shared environment directory: {env_path}")
+                    try:
+                        shutil.rmtree(env_path)
+                    except Exception as e:
+                        self.logger.error(f"Error removing shared environment directory {env_path}: {e}")
+                for env_dir in shared_envs_dir.iterdir():
+                    if env_dir.is_dir() and env_dir.name not in envs:
+                        shutil.rmtree(env_dir)
+            
     def _resolve_template(self, text: str) -> str:
         """Sostituisce placeholder {{...}} con path assoluti (slash normalizzati)."""
         vendor_str = str(self.vendor_dir).replace("\\", "/")

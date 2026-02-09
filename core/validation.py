@@ -112,8 +112,8 @@ class Validator:
                 pixi_cmd,
                 check=True,
                 cwd=self.project_root,
-                stdout=subprocess.PIPE if self.verbose and not all else None,
-                stderr=subprocess.PIPE if self.verbose and not all else None,
+                stdout=subprocess.PIPE if self.verbose or all else None,
+                stderr=subprocess.PIPE if self.verbose or all else None,
                 text=True
             )
             self.logger.success(f"Validation command for {method_id} completed successfully.")

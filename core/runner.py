@@ -37,6 +37,22 @@ class PipelineRunner:
         
         steps = self.config.get("steps", [])
         for i, step in enumerate(steps):
+            method_rel_path = step.get("method")
+            
+            method_path = (self.base_path / method_rel_path).resolve()
+            if not method_path.exists():
+                 method_path = (self.base_path / "methods" / method_rel_path).resolve()
+
+            env_path = self.envs_base_dir / method_path.stem
+            
+            manifest_path = env_path / "pixi.toml"
+            shared_meta = env_path / "shared_env.json"
+            if not manifest_path.exists() and not shared_meta.exists():
+                 self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
+                 raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
+
+            
+        for i, step in enumerate(steps):
             self._run_step(step, i)
 
     def _run_step(self, step_config: Dict, index: int):
@@ -63,11 +79,11 @@ class PipelineRunner:
 
             env_path = self.envs_base_dir / method_path.stem
             
-            manifest_path = env_path / "pixi.toml"
-            shared_meta = env_path / "shared_env.json"
-            if not manifest_path.exists() and not shared_meta.exists():
-                 self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
-                 raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
+            # manifest_path = env_path / "pixi.toml"
+            # shared_meta = env_path / "shared_env.json"
+            # if not manifest_path.exists() and not shared_meta.exists():
+            #      self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
+            #      raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
 
             # Resolving inputs from TOML
             step_inputs = {}

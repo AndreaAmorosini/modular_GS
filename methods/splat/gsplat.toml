@@ -60,12 +60,6 @@ command = """python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py mcmc
 --disable-viewer \
 --save-ply \
 --max-steps {{kwargs.get('iterations', 60000)}} \
---random-bkgd \
---opacity-reg 0.025 \
---scale-reg 0.02 \
---strategy.min-opacity 0.015 \
---strategy.noise-lr 300000 \
---strategy.cap-max 600000 \
 --app-opt \
 --antialiased
 """
