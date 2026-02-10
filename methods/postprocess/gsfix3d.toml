@@ -593,4 +593,4 @@ help_command = "cd {{method_vendor_dir}}/gsfix3d && python scripts/gsfixer/infer
 [execution.outputs]
 result_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: b37c8e844ac86b110cc4a636a364f6c89da4ff6a6ada16949820c9f29284a0a3
+# MODULAR_GS_SIGNATURE: 6bb1566ed918aa74273ce6e2b5cc6e3b607429b1b69a30ac2a158df84acbd77462495e7d5e20106ff9e021907ecd6c483f70586f4df8eed7c8f985f2b0cf3b03

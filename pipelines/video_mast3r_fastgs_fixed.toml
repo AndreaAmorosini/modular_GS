@@ -70,4 +70,4 @@ refine_iters = 30
 refine_kf_iters = 50
 finetune_config = "config/finetune_gsfixer.yaml"
 
-# MODULAR_GS_SIGNATURE: a34e04f063665ea6437ead1e2b21b03b8116090c6a270e9606e7c6db981859cc
+# MODULAR_GS_SIGNATURE: f43d1df402762a5a4c6de86a39dbd68c3d0db82f979602f47ddd1bd9853fa362bd1f035e47e02b20b9972ba25d7e590b4315905bcaa8b57563e864bd9699e3b8
