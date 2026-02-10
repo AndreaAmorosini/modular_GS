@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Install dependencies
+        run: pip install numpy plyfile
+
       - name: Sign TOML files
         env:
           MODULAR_GS_SECRET_KEY: ${{ secrets.MODULAR_GS_SECRET_KEY }}
