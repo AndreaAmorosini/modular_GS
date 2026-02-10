@@ -10,11 +10,9 @@ import zipfile
 import stat
 import os
 from contextlib import contextmanager
-import hashlib
-import hmac
-import secrets
-import base64
 from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
+import tomli
+import typer
 
 
 
@@ -453,3 +451,43 @@ class SignatureVerifier:
             pass
         logging.error(f"[SECURITY] Signature verification failed for: {file_path.name}")
         return False
+    
+def verify_file_interactive(file_path: Path, verbose: bool = False) -> None:
+    verifier = SignatureVerifier()
+    if verifier.verify(file_path):
+        print(f"File '{file_path.name}' is valid.")
+        return
+    
+    title = file_path.stem
+    url = ""
+    
+    try:
+        with open(file_path, "rb") as f:
+            data = tomli.load(f)
+            title = data.get("title", title)
+            url = data.get("url", "")
+            if url == "":
+                repos = data.get("installation", {}).get("git_repos", [])
+                if repos:
+                    url = repos[0].get("url", "")
+    except Exception as e:
+        pass
+
+    typer.secho("\n" + "!" * 60, fg=typer.colors.RED)
+    typer.secho(
+        " [SECURITY WARNING] SIGNATURE VERIFICATION FAILED",
+        fg=typer.colors.RED,
+        bold=True,
+    )
+    typer.secho("!" * 60, fg=typer.colors.RED)
+    typer.echo(f" File: {file_path}")
+    typer.echo(f" Method: {title}")
+    typer.echo(f" Origin: {url}")
+    typer.echo(" This file may have been modified or comes from an untrusted source.")
+    typer.secho("!" * 60 + "\n", fg=typer.colors.RED)
+
+    if not typer.confirm("Do you want to proceed anyway?", default=False):
+        logging.error("Operation aborted by user due to security check.")
+        raise typer.Abort()
+
+    logging.warning(f"User confirmed usage of unverified file: {file_path}")

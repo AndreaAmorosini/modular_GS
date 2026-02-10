@@ -16,7 +16,7 @@ from core.runner import PipelineRunner
 from core.installer import MethodInstaller
 
 from core.validation import Validator
-from core.utils import setup_logging, get_or_download_pixi
+from core.utils import setup_logging, get_or_download_pixi, verify_file_interactive
 
 app = typer.Typer(help="Modular Pipeline for Gaussian SPlatting.")
 methods_app = typer.Typer(help="Install, validate, remove and execute methods in various pipelines.")
@@ -159,6 +159,8 @@ def run(
                 except ValueError:
                     pass 
             overrides[key] = val
+            
+    verify_file_interactive(config_file, verbose=verbose)
 
     try:
         # Passiamo overrides direttamente nel costruttore
@@ -223,6 +225,8 @@ def install_method(
     )
     
     method_path = _find_manifest(method_name)
+    
+    verify_file_interactive(method_path, verbose=verbose)
 
     try:
         # typer.echo(f"Loading configuration from {method_path}...")
@@ -374,6 +378,8 @@ def validate(
     validator = Validator(METHODS_DIR, verbose)
     
     if not all and method_name is not None:
+        method_path = _find_manifest(method_name)
+        verify_file_interactive(method_path, verbose=verbose)
         target_id = Path(method_name).stem
         validator.validate_method(target_id, all=False)
     elif all:
@@ -461,7 +467,6 @@ def list_arguments(
             
     except Exception as e:
         logger.error(f"[ERROR] Cannota invoke --help parameter on specified script: {e}")
-
 
 
 if __name__ == "__main__":
