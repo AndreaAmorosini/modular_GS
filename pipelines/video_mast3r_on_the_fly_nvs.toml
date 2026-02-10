@@ -32,3 +32,5 @@ method = "methods/splat/on_the_fly_nvs.toml"
 source_path = "{{context.StructureFromMotion_model_dir}}"
 # [steps.kwargs]
 # iterations = 15000
+
+# MODULAR_GS_SIGNATURE: b5ed1ac6467447a028ffaacaf1354349cebe741d581966e0ec7feaf71abb22e5

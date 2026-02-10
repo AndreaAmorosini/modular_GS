@@ -32,3 +32,5 @@ method = "methods/splat/gsplat.toml"
 source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
 iterations = 100000
+
+# MODULAR_GS_SIGNATURE: 079c928873951279cb905cbc0618a4fd32529a8799db1c94cd4cae1cf8b0a2b9

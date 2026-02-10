@@ -69,3 +69,5 @@ num_novel_views = 40
 refine_iters = 30
 refine_kf_iters = 50
 finetune_config = "config/finetune_gsfixer.yaml"
+
+# MODULAR_GS_SIGNATURE: a34e04f063665ea6437ead1e2b21b03b8116090c6a270e9606e7c6db981859cc

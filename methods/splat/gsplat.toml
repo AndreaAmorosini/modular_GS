@@ -74,3 +74,5 @@ help_command = "python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py m
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: 6e4bf25a068b75b41545f85b0ca3f34fb6278a3381b372997d242cb65fa00a02
