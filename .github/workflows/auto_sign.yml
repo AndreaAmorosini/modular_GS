@@ -24,11 +24,11 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install numpy plyfile
+        run: pip install numpy plyfile ecdsa
 
       - name: Sign TOML files
         env:
-          MODULAR_GS_SECRET_KEY: ${{ secrets.MODULAR_GS_SECRET_KEY }}
+          MODULAR_GS_PRIVATE_KEY: ${{ secrets.MODULAR_GS_SECRET_KEY }}
           PYTHONPATH: .
         run: |
           python -c "
@@ -41,8 +41,8 @@ jobs:
           logging.basicConfig(level=logging.INFO)
 
           # Verifica presenza chiave
-          if not os.environ.get('MODULAR_GS_SECRET_KEY'):
-              print('::error::Secret MODULAR_GS_SECRET_KEY not found in GitHub Secrets!')
+          if not os.environ.get('MODULAR_GS_PRIVATE_KEY'):
+              print('::error::Secret MODULAR_GS_PRIVATE_KEY not found in GitHub Secrets!')
               exit(1)
               
           verifier = SignatureVerifier()

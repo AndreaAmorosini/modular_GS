@@ -1,5 +1,4 @@
 from pathlib import Path
-import sys
 import logging
 import subprocess
 import time
@@ -14,6 +13,9 @@ from contextlib import contextmanager
 import hashlib
 import hmac
 import secrets
+import base64
+from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
+
 
 
 try:
@@ -360,18 +362,31 @@ class SignatureVerifier:
     Manage the verification of the TOML files through the expected signature of the functions.
     """
     SIG_MARKER = "# MODULAR_GS_SIGNATURE: "
+    PUBLIC_KEY_HEX = "a2fe3abc989e2b86601956703499dfbeb3b3f5b15b214d36c6d6264770132d84ac9e46ec0cede0fd05eaba3c1a2fd6882ac4bc7455fa4e85366dfba55f3c0142"
     
-    def __init__(self, secret_key: str | bytes | None = None):
-        if secret_key:
-            self.secret_key = secret_key.encode("utf-8") if isinstance(secret_key, str) else secret_key
+    def __init__(self):
+        self.public_key = None
+        self.private_key = None
+        self.can_verify = False
+        
+        env_key = os.environ.get("MODULAR_GS_PRIVATE_KEY")
+        if env_key:
+            try:
+                self.private_key = SigningKey.from_string(bytes.fromhex(env_key), curve=NIST256p)
+                logging.info("[SECURITY] Private key loaded from environment variable.")
+            except Exception as e:
+                logging.error(f"[SECURITY] Failed to load private key from environment variable: {e}")
+        
+        if self.PUBLIC_KEY_HEX:
+            try:
+                self.public_key = VerifyingKey.from_string(bytes.fromhex(self.PUBLIC_KEY_HEX), curve=NIST256p)
+                self.can_verify = True
+                logging.info("[SECURITY] Public key loaded for signature verification.")
+            except Exception as e:
+                logging.error(f"[SECURITY] Failed to load public key: {e}")
         else:
-            env_key = os.environ.get("MODULAR_GS_SECRET_KEY")
-            if env_key:
-                self.secret_key = env_key.encode("utf-8")
-            else:
-                logging.warning("[SECURITY] No key found for SignatureVerifier. Using random key (verification will fail).")
-                self.secret_key = secrets.token_bytes(32)
-
+            logging.warning("[SECURITY] No public key provided. Signature verification will be disabled.")
+        
     def _get_clean_content_and_signature(self, file_path: Path) -> tuple[bytes, str | None]:
         """Check the file for the signature line and return the clean content and the signature separately."""
         if not file_path.exists():
@@ -401,31 +416,40 @@ class SignatureVerifier:
 
     def sign(self, file_path: Path) -> None:
         """Create a signature for the file and embed it at the end of the file."""
+        if not self.private_key:
+            logging.error("[SECURITY] Private key not available. Cannot sign file.")
+            return
+        
         clean_bytes, _ = self._get_clean_content_and_signature(file_path)
         
-        digest = hmac.new(self.secret_key, clean_bytes, hashlib.sha256).hexdigest()
+        signature = self.private_key.sign(clean_bytes)
+        sign_hex = signature.hex()
         
         with open(file_path, "wb") as f:
             f.write(clean_bytes)
             f.write(b"\n\n")
-            f.write(f"{self.SIG_MARKER}{digest}\n".encode("utf-8"))
+            f.write(f"{self.SIG_MARKER}{sign_hex}\n".encode("utf-8"))
             
         logging.info(f"[SECURITY] Firmato (embedded): {file_path.name}")
 
     def verify(self, file_path: Path) -> bool:
         """Check file integrity by comparing the current signature with the expected one."""
+        if not self.can_verify:
+            logging.warning("[SECURITY] Public key not available. Cannot verify signature.")
+            return False
+        
         clean_bytes, signature = self._get_clean_content_and_signature(file_path)
         
         if not signature:
             logging.warning(f"[SECURITY] No signature found in: {file_path.name}")
             return False
-        
-        current_digest = hmac.new(self.secret_key, clean_bytes, hashlib.sha256).hexdigest()
-        
-        if hmac.compare_digest(current_digest, signature):
-            logging.info(f"[SECURITY] verified: {file_path.name}")
-            return True
-        else:
-            logging.error(f"[SECURITY] Signature not valid for: {file_path.name}")
-            return False
-        
+                
+        try:
+            sig_bytes = bytes.fromhex(signature)
+            if self.public_key.verify(sig_bytes, clean_bytes):
+                logging.info(f"[SECURITY] Signature valid for: {file_path.name}")
+                return True
+        except (BadSignatureError, ValueError):
+            pass
+        logging.error(f"[SECURITY] Signature verification failed for: {file_path.name}")
+        return False
