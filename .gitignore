@@ -2,3 +2,10 @@
 vendor
 .envs/
 bin/
+/inputs/**/*
+!/inputs/**/
+!/inputs/**/.gitkeep
+
+/output/**/*
+!/output/**/
+!/output/**/.gitkeep

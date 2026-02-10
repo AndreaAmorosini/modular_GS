@@ -11,6 +11,9 @@ import zipfile
 import stat
 import os
 from contextlib import contextmanager
+import hashlib
+import hmac
+import secrets
 
 
 try:
@@ -351,3 +354,78 @@ class RerunVisualizer:
 
         except Exception as e:
             logging.warning(f"Rerun visualization for SFM failed: {e}")
+            
+class SignatureVerifier:
+    """
+    Manage the verification of the TOML files through the expected signature of the functions.
+    """
+    SIG_MARKER = "# MODULAR_GS_SIGNATURE: "
+    
+    def __init__(self, secret_key: str | bytes | None = None):
+        if secret_key:
+            self.secret_key = secret_key.encode("utf-8") if isinstance(secret_key, str) else secret_key
+        else:
+            env_key = os.environ.get("MODULAR_GS_SECRET_KEY")
+            if env_key:
+                self.secret_key = env_key.encode("utf-8")
+            else:
+                logging.warning("[SECURITY] No key found for SignatureVerifier. Using random key (verification will fail).")
+                self.secret_key = secrets.token_bytes(32)
+
+    def _get_clean_content_and_signature(self, file_path: Path) -> tuple[bytes, str | None]:
+        """Check the file for the signature line and return the clean content and the signature separately."""
+        if not file_path.exists():
+            raise FileNotFoundError(f"File non trovato: {file_path}")
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        lines = content.splitlines()
+        signature = None
+        
+        # Cerca la firma partendo dal fondo
+        for i in range(len(lines) - 1, -1, -1):
+            line = lines[i].strip()
+            if not line:
+                continue
+            if line.startswith(self.SIG_MARKER):
+                signature = line.replace(self.SIG_MARKER, "").strip()
+                lines = lines[:i] # Rimuove la riga della firma e tutto ciò che segue
+                break
+            else:
+                break # Trovato contenuto non-firma alla fine
+                
+        # Normalizza il contenuto (strip trailing whitespace) per coerenza
+        clean_text = "\n".join(lines).rstrip()
+        return clean_text.encode("utf-8"), signature
+
+    def sign(self, file_path: Path) -> None:
+        """Create a signature for the file and embed it at the end of the file."""
+        clean_bytes, _ = self._get_clean_content_and_signature(file_path)
+        
+        digest = hmac.new(self.secret_key, clean_bytes, hashlib.sha256).hexdigest()
+        
+        with open(file_path, "wb") as f:
+            f.write(clean_bytes)
+            f.write(b"\n\n")
+            f.write(f"{self.SIG_MARKER}{digest}\n".encode("utf-8"))
+            
+        logging.info(f"[SECURITY] Firmato (embedded): {file_path.name}")
+
+    def verify(self, file_path: Path) -> bool:
+        """Check file integrity by comparing the current signature with the expected one."""
+        clean_bytes, signature = self._get_clean_content_and_signature(file_path)
+        
+        if not signature:
+            logging.warning(f"[SECURITY] No signature found in: {file_path.name}")
+            return False
+        
+        current_digest = hmac.new(self.secret_key, clean_bytes, hashlib.sha256).hexdigest()
+        
+        if hmac.compare_digest(current_digest, signature):
+            logging.info(f"[SECURITY] verified: {file_path.name}")
+            return True
+        else:
+            logging.error(f"[SECURITY] Signature not valid for: {file_path.name}")
+            return False
+        

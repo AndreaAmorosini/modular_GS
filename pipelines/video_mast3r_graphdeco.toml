@@ -28,4 +28,4 @@ method = "methods/splat/gaussian_splatting_graphdeco.toml"
 #{StepName}_{output_name}
 source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
-iterations = 10000
+iterations = 50000
