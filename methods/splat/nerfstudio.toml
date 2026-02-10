@@ -43,3 +43,5 @@ post_install_commands = [
 
 [validation]
 validation_command = "ns-train --help"
+
+# MODULAR_GS_SIGNATURE: 47235ebf32497066765e9101b036ffe12f9bd0968d15295a5ae522544abb0c7e

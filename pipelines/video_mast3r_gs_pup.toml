@@ -32,3 +32,5 @@ method = "methods/splat/gaussian_splatting_pup.toml"
 source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
 iterations = 30000
+
+# MODULAR_GS_SIGNATURE: 3e3d5836f3966bed40eef0e70d04c4c2996efd8563bac4c82676b1fafc67d214

@@ -84,3 +84,5 @@ help_command = "python {{method_vendor_dir}}/fastgs/train.py --help"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: 28d62afd2d7e47faaece2ef74fec62ab537410c2dc4c481758bebe42e2b37e9f

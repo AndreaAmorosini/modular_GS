@@ -592,3 +592,5 @@ checkpoint = ""
 help_command = "cd {{method_vendor_dir}}/gsfix3d && python scripts/gsfixer/inference.py --help && echo '---' && python scripts/gsfix3d/refine_gs.py --help"
 [execution.outputs]
 result_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: b37c8e844ac86b110cc4a636a364f6c89da4ff6a6ada16949820c9f29284a0a3

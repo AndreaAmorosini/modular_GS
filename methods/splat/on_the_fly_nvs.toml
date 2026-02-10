@@ -70,3 +70,5 @@ expected_db_folder = "sparse"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: f701874613de006fd2bae7f1e475c4c4d4f49dc02540ee9860ade050a5622e50
