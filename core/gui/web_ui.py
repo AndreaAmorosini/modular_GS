@@ -33,6 +33,8 @@ pages = [
     st.Page("pages/home.py", title="Home", icon="🏠"),
     st.Page("pages/1_manage_tools.py", title="Manage Methods", icon="📦"),
     st.Page("pages/2_manage_pipeline.py", title="Pipeline Manager", icon="🧭"),
+    st.Page("pages/3_inputs.py", title="Inputs", icon="📁"),
+    st.Page("pages/4_outputs.py", title="Outputs", icon="▶️"),
 ]
 
 #Magari position="top" per avere il logo su nella sidebar

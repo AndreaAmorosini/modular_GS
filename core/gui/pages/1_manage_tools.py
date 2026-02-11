@@ -87,7 +87,8 @@ for category in sorted(categories.keys()):
 
                 with c1:
                     st.markdown(f"**{config.get('title', method_id)}**")
-                    st.caption(f"ID: `{method_id}`")
+                    st.markdown(f"{config.get('description', 'No description')}")
+                    st.markdown(f'<a href="{config.get("url", "")}" target="_blank" rel="noopener noreferrer">{config.get("url", "")}</a>', unsafe_allow_html=True)
 
                 with c2:
                     if is_installed:
@@ -96,7 +97,7 @@ for category in sorted(categories.keys()):
                         st.warning("❌ Not Installed")
 
                 with c3:
-                    b1, b2, b3 = st.columns(3)
+                    b1, b2, b3, b4 = st.columns(4)
 
                     if b1.button(
                         "Install",
@@ -148,3 +149,65 @@ for category in sorted(categories.keys()):
                                     st.rerun()
                                 except Exception as e:
                                     st.error("Error during uninstallation. Check logs for details.")
+                                    
+                    if b4.button(
+                        "Show Arguments",
+                        key = f"args_{method_id}",
+                        disabled=not is_installed,
+                        use_container_width=True,
+                    ):
+                        cmd = [
+                            sys.executable,
+                            str(project_root / "main.py"),
+                            "methods",
+                            "help",
+                            method_id,
+                        ]
+                        with st.spinner(f"Fetching parameters for {method_id}..."):
+                            try:
+                                proc = subprocess.run(
+                                    cmd,
+                                    cwd=str(project_root),
+                                    capture_output=True,
+                                    text=True,
+                                )
+                                stdout = proc.stdout or ""
+                                stderr = proc.stderr or ""
+                                exit_code = proc.returncode
+
+                                # Mostra in modal (fallback a expander se modal non disponibile)
+                                try:
+                                    with st.modal(f"Parameters — {method_id}"):
+                                        if stdout:
+                                            st.subheader("Output")
+                                            st.code(stdout, language="bash")
+                                        else:
+                                            st.info(
+                                                "No stdout produced by the command."
+                                            )
+                                        # if stderr:
+                                        #     st.subheader("Errors / Stderr")
+                                        #     st.code(stderr, language="bash")
+                                        st.caption(f"Exit code: {exit_code}")
+                                        st.button(
+                                            "Close", key=f"close_params_{method_id}"
+                                        )
+                                except Exception:
+                                    # Fallback
+                                    with st.expander(
+                                        f"Parameters — {method_id}", expanded=True
+                                    ):
+                                        if stdout:
+                                            st.subheader("Output")
+                                            st.code(stdout, language="bash")
+                                        else:
+                                            st.info(
+                                                "No stdout produced by the command."
+                                            )
+                                        # if stderr:
+                                        #     st.subheader("Errors / Stderr")
+                                        #     st.code(stderr, language="bash")
+                                        st.caption(f"Exit code: {exit_code}")
+
+                            except Exception as e:
+                                st.error(f"Error fetching parameters: {e}")

@@ -10,7 +10,7 @@ import os
 import shlex
 import shutil
 import sys
-import subprocess
+import json
 
 from core.runner import PipelineRunner
 from core.installer import MethodInstaller
@@ -435,7 +435,6 @@ def list_arguments(
             level=logging.INFO,
             allowList=LOG_ALLOWLIST,
         )    
-
         
         method_path = _find_manifest(method_name)
         with open(method_path, "rb") as f:
@@ -443,15 +442,25 @@ def list_arguments(
         env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
         env_path = ENVS_DIR / env_name
         
-        if not(env_path / "pixi.toml").exists():
-            logger.warning(f"Environment '{env_name}' not found. First esecute the install command")
-            return
-        
+        manifest_path = env_path / "pixi.toml"
+        shared_env_name = None
+        if not manifest_path.exists():
+            shared_meta = env_path / "shared_env.json"
+            if shared_meta.exists():
+                with open(shared_meta, "r") as f:
+                        meta = json.load(f)
+                manifest_path = Path(meta.get("manifest_path", "")) if meta.get("manifest_path") else manifest_path
+                shared_env_name = meta.get("env_name", None)
+            else:
+                logger.warning(f"No pixi.toml found for '{method_name}' in {env_path}")
+                return
+                
         help_section = cfg.get("execution", {}).get("help", {})
         help_command = help_section.get("help_command") if help_section else None
         
         if not help_command:
-            logger.waring("No help_command found in the specified TOML")
+            logger.warning("No help_command found in the specified TOML")
+            return
             
         vendor_str = str(VENDOR_DIR).replace("\\", "/")
         root_str = str(PROJECT_ROOT).replace("\\", "/")
@@ -460,7 +469,11 @@ def list_arguments(
         
         pixi_exe = get_or_download_pixi(PROJECT_ROOT)
         args = shlex.split(cmd_str, posix=os.name != "nt")
-        full_cmd = [str(pixi_exe), "run", "--manifest-path", str(env_path / "pixi.toml")] + args
+        
+        full_cmd = [str(pixi_exe), "run", "--manifest-path", str(manifest_path)]
+        if shared_env_name:
+            full_cmd += ["-e", shared_env_name]
+        full_cmd += args
         
         logger.info(f"Executing: {cmd_str}\n")
         subprocess.check_call(full_cmd, cwd=PROJECT_ROOT)

@@ -1,6 +1,7 @@
 import streamlit as st
 import sys
 from pathlib import Path
+import tomli_w
 
 try:
     import tomllib as toml
@@ -59,12 +60,18 @@ def parse_toml_file(p: Path):
 
 
 def required_methods_from_pipeline(parsed: dict):
-    req = []
+    req = {}
     steps = parsed.get("steps", []) or []
     for i in steps:
         method_name = i.get("method").split("/")[-1].split(".")[0] or ""
         if method_name != "":
-            req.append(method_name)
+            kwargs = i.get("kwargs", {}) or {}
+            args = {}
+            if kwargs != {}:
+                for k, v in kwargs.items():
+                    if k not in ["output_key","primary_output"]:
+                        args[k] = v
+            req[method_name] = args
     return req
 
 
@@ -97,26 +104,121 @@ for pf in pipeline_files:
     missing = [m for m in required if m not in installed]
     runnable = len(missing) == 0
 
-    header = f"{name} — {pf.name}"
+    header = f"{name}"
     if runnable:
         st.success(header + " — Ready for execution")
     else:
         st.error(header + f" — Missing Tools: {', '.join(missing)}")
+        
+    #Editing session state for pipeline details
+    state_key = f"pipeline_edit_{pf.name}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = required.copy()
 
     with st.expander("Pipeline Details"):
         if desc:
             st.write(desc)
+        
+        global_opts = parsed.get("global_options", {}) or {}
+        has_threshold = "filter_opacity_threshold" in global_opts
+        default_threshold = global_opts.get("filter_opacity_threshold", 0.1)
+        
+        state_key_global = f"{state_key}_global"
+        if state_key_global not in st.session_state:
+            st.session_state[state_key_global] = {
+                "use_filter": bool(has_threshold),
+                "threshold": default_threshold,
+            }
+            
+        with st.expander("Global Options", expanded=False):
+            use_filter = st.checkbox(
+                "Use Opacity Filter",
+                value =st.session_state[state_key_global]["use_filter"],
+                key=f"{state_key}_use_filter"
+            )
+            st.session_state[state_key_global]["use_filter"] = use_filter
+            
+            if use_filter:
+                thr = st.number_input(
+                    "Opacity Threshold",
+                    min_value = 0.0,
+                    max_value = 1.0,
+                    value = st.session_state[state_key_global]["threshold"],
+                    step = 0.01,
+                    format="%.2f",
+                    key=f"{state_key}_threshold"
+                )
+                st.session_state[state_key_global]["threshold"] = thr
+            else:
+                thr = st.session_state[state_key_global]["threshold"]  # Keep previous value even if not used   
+        
         st.write("Steps:")
-        steps = required
+        steps = required.keys()
         for step_name in steps:
             step_conf = parsed.get("step", {}).get(step_name, {}) or {}
-            # method = step_conf.get("method", "<no-method>")
+            method = step_conf.get("method", "<no-method>")
             status = "✓" if step_name in installed else "✗"
-            # st.write(f"- {step_name}: {method} {status}")
-            st.write(f"- {step_name}: {status}")
-
+            
+            with st.expander(f"{step_name} - [{status}]", expanded=False):
+                st.write(f"Stato: {status}")
+                edit_container = st.container()
+                current_kwargs = st.session_state[state_key].get(step_name, {})
+                
+                new_kwargs = {}
+                for k, v in current_kwargs.items():
+                    input_key = f"{state_key}_{step_name}_{k}"
+                    if isinstance(v, bool):
+                        new_v = edit_container.checkbox(k, value=v, key=input_key)
+                    elif isinstance(v, int):
+                        new_v = edit_container.number_input(k, value=v, key=input_key)
+                    else:
+                        new_v = edit_container.text_input(k, value=v, key=input_key)
+                        
+                        if new_v.lower() in ("true", "false"):
+                            new_v = True if new_v.lower() == "true" else False
+                        # else:
+                        #     try:
+                        #         if "." in new_v:
+                        #             new_v = float(new_v)
+                        #         else:
+                        #             new_v = int(new_v)
+                        #     except ValueError:
+                        #         pass
+                            
+                    new_kwargs[k] = new_v
+                    
+                st.session_state[state_key][step_name] = new_kwargs
+                
+                if st.button(f"Aggiungi parametro a {step_name}", key=f"add_param_{state_key}_{step_name}"):
+                    st.session_state[state_key][step_name][f"new_param_{len(current_kwargs)}"] = ""
+                    st.rerun()
+                    
         st.write("File:", pf.name)
-
+        
+        if st.button(f"Salva modifiche in {pf.name}", key=f"save_{pf.name}"):
+            try:
+                edits = st.session_state[state_key]
+                steps_section = parsed.setdefault("step", {})
+                for step_name, kws in edits.items():
+                    if step_name not in steps_section:
+                        steps_section[step_name] = {}
+                    steps_section[step_name]["kwargs"] = kws
+                    
+                global_state = st.session_state[state_key_global]
+                if global_state.get("use_filter", False):
+                    go = parsed.setdefault("global_options", {})
+                    go["filter_opacity_threshold"] = float(global_state.get("threshold", default_threshold))
+                else:
+                    if "global_options" in parsed and "filter_opacity_threshold" in parsed["global_options"]:
+                        parsed["global_options"].pop("filter_opacity_threshold", None)
+                        if not parsed["global_options"]:
+                            parsed.pop("global_options", None)
+                    
+                with open(pf, "wb") as f:
+                    tomli_w.dump(parsed, f)
+                st.success(f"Args Saved in {pf.name}")
+            except Exception as e:
+                st.error(f"Error saving: {e}")
     st.divider()
 
 st.info("Reload the page to update the pipeline status after installing/uninstalling methods.")
