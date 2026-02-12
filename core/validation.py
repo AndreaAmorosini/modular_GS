@@ -42,6 +42,10 @@ class Validator:
                 # Fallback for title if not present
                 if "title" not in config:
                     config["title"] = method_id
+                    
+                exec_section = config.get("execution", {})
+                has_help = isinstance(exec_section, dict) and isinstance(exec_section.get("help"), dict)
+                config["has_help"] = bool(has_help)
 
                 registry[method_id] = config
             except Exception as e:

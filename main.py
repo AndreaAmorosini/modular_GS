@@ -393,6 +393,20 @@ def list_methods():
     """List all available methods specifing wich one are installed or not."""
     validator = Validator(METHODS_DIR)
     registry = validator.registry
+    total_tools = len(registry)
+    
+    installed_count = 0
+    total_bytes = 0
+    
+    if ENVS_DIR.exists():
+        for child in ENVS_DIR.iterdir():
+            if child.is_dir():
+                if (child / ".install_complete").exists():
+                    installed_count += 1
+                total_bytes += _get_dir_size_du_bytes(child)
+                
+    typer.secho(f"\nAvailable Methods: {total_tools} | Installed: {installed_count} | Total Size: {_readable(total_bytes)}", bold=True)
+
     
     typer.secho(f"\n{'METHOD':<25} {'STATE':<12} {'DESCRIPTION'}", bold=True, underline=True)
 
@@ -428,9 +442,8 @@ def list_arguments(
         str, typer.Argument(help="Name of the method.")
     ]
 ):
-    """List the help command defined in the method TOML and execute it to show available parameters."""
+    """List the help command defined in the method TOML and execute it to show available parameters."""        
     try:
-        
         logger = setup_logging(
             level=logging.INFO,
             allowList=LOG_ALLOWLIST,
@@ -479,8 +492,37 @@ def list_arguments(
         subprocess.check_call(full_cmd, cwd=PROJECT_ROOT)
             
     except Exception as e:
-        logger.error(f"[ERROR] Cannota invoke --help parameter on specified script: {e}")
+        logger.error(f"[ERROR] Error retrieving all methods: {e}")
 
+def _get_dir_size_du_bytes(p: Path) -> int:
+    try:
+        proc = subprocess.run(
+            ["du", "-sb", str(p)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        out = proc.stdout.strip().split()
+        if out:
+            return int(out[0])
+    except Exception:
+        # fallback: sum file sizes
+        total = 0
+        for root, _, files in os.walk(p):
+            for f in files:
+                try:
+                    total += (Path(root) / f).stat().st_size
+                except Exception:
+                    pass
+        return total
+    return 0
+
+def _readable(n: int) -> str:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if n < 1024:
+            return f"{n:.2f} {unit}"
+        n /= 1024
+    return f"{n:.2f} PB"
 
 if __name__ == "__main__":
     app()

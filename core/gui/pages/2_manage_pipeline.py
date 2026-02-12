@@ -2,6 +2,8 @@ import streamlit as st
 import sys
 from pathlib import Path
 import tomli_w
+import re
+import hashlib
 
 try:
     import tomllib as toml
@@ -22,10 +24,6 @@ while not (project_root / "pipelines").exists():
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
     
-try:
-    from core.gui.web_ui import render_sidebar
-except ImportError as e:
-    print(f"Error importing render_sidebar: {e}")
 
 st.set_page_config(
     page_title="ModularGS - Pipeline Manager", layout="wide", page_icon="🧭"
@@ -91,7 +89,7 @@ installed = installed_methods(envs_path)
 st.sidebar.markdown(f"Found pipelines: **{len(pipeline_files)}**")
 st.sidebar.markdown(f"Installed methods: **{len(installed)}**")
 
-for pf in pipeline_files:
+for idx, pf in enumerate(pipeline_files):
     parsed = parse_toml_file(pf)
     if "_parse_error" in parsed:
         st.error(f"{pf.name} — Error parsing: {parsed['_parse_error']}")
@@ -111,11 +109,17 @@ for pf in pipeline_files:
         st.error(header + f" — Missing Tools: {', '.join(missing)}")
         
     #Editing session state for pipeline details
-    state_key = f"pipeline_edit_{pf.name}"
+    # raw = f"pipeline_edit_{idx}_{pf.stem}"
+    # state_key = re.sub(r'[^0-9A-Za-z_]', '_', raw)
+    
+    pf_path_hash = hashlib.sha1(str(pf.resolve()).encode("utf-8")).hexdigest()[:8]
+    prefix = f"pipeline_edit_{idx}_{pf_path_hash}"
+    state_key = re.sub(r'[^0-9A-Za-z_]', '_', prefix)
     if state_key not in st.session_state:
         st.session_state[state_key] = required.copy()
 
-    with st.expander("Pipeline Details"):
+    details_expander_key = f"{state_key}_details"
+    with st.expander("Pipeline Details", expanded=False):
         if desc:
             st.write(desc)
         
@@ -130,11 +134,12 @@ for pf in pipeline_files:
                 "threshold": default_threshold,
             }
             
+        global_expander_key = f"{state_key}_global_exp"
         with st.expander("Global Options", expanded=False):
             use_filter = st.checkbox(
                 "Use Opacity Filter",
                 value =st.session_state[state_key_global]["use_filter"],
-                key=f"{state_key}_use_filter"
+                key=f"{state_key}_use_filter_{pf_path_hash}"
             )
             st.session_state[state_key_global]["use_filter"] = use_filter
             
@@ -146,7 +151,7 @@ for pf in pipeline_files:
                     value = st.session_state[state_key_global]["threshold"],
                     step = 0.01,
                     format="%.2f",
-                    key=f"{state_key}_threshold"
+                    key=f"{state_key}_threshold_{pf_path_hash}"
                 )
                 st.session_state[state_key_global]["threshold"] = thr
             else:
@@ -159,6 +164,8 @@ for pf in pipeline_files:
             method = step_conf.get("method", "<no-method>")
             status = "✓" if step_name in installed else "✗"
             
+            san_step = re.sub(r'[^0-9A-Za-z_]', '_', str(step_name))
+            
             with st.expander(f"{step_name} - [{status}]", expanded=False):
                 st.write(f"Stato: {status}")
                 edit_container = st.container()
@@ -166,7 +173,8 @@ for pf in pipeline_files:
                 
                 new_kwargs = {}
                 for k, v in current_kwargs.items():
-                    input_key = f"{state_key}_{step_name}_{k}"
+                    san_k = re.sub(r'[^0-9A-Za-z_]', '_', str(k))
+                    input_key = f"{state_key}_step_{step_name}_{san_k}"
                     if isinstance(v, bool):
                         new_v = edit_container.checkbox(k, value=v, key=input_key)
                     elif isinstance(v, int):
@@ -189,13 +197,15 @@ for pf in pipeline_files:
                     
                 st.session_state[state_key][step_name] = new_kwargs
                 
-                if st.button(f"Aggiungi parametro a {step_name}", key=f"add_param_{state_key}_{step_name}"):
+                add_param_key = f"add_param_{state_key}_{san_step}_{len(current_kwargs)}"
+                if st.button(f"Aggiungi parametro a {step_name}", key=add_param_key):
                     st.session_state[state_key][step_name][f"new_param_{len(current_kwargs)}"] = ""
                     st.rerun()
                     
         st.write("File:", pf.name)
         
-        if st.button(f"Salva modifiche in {pf.name}", key=f"save_{pf.name}"):
+        save_key = f"save_{state_key}_{pf_path_hash}"
+        if st.button(f"Salva modifiche in {pf.name}", key=save_key):
             try:
                 edits = st.session_state[state_key]
                 steps_section = parsed.setdefault("step", {})
