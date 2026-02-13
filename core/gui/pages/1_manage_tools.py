@@ -7,9 +7,9 @@ import tomli as tomllib
 import os
 
 st.set_page_config(
-    page_title = "Manage Methods",
-    page_icon = "📦",
-    layout = "wide"
+    page_title="Modular Gaussian Splatting - Manage Methods",
+    page_icon="📦",
+    layout="wide",
 )
 
 current_file = Path(__file__).resolve()
@@ -150,158 +150,7 @@ for category in sorted(categories.keys()):
 
                 with c3:
                     b1, b2, b3, b4 = st.columns(4)
-
-                    # if b1.button(
-                    #     "Install",
-                    #     key=f"inst_{method_id}",
-                    #     disabled=is_installed,
-                    #     use_container_width=True,
-                    # ):
-                    #     #SIGNATURE VERIFICATION
-                    #     proceed_install = True
-                    #     if toml_path and toml_path.exists():
-                    #         ok = verifier.verify(Path(toml_path))
-                    #         if not ok and not st.session_state.get(f"force_install_{method_id}", False):
-                    #             st.warning(f"Signature verification FAILED for {toml_path.name}. Installation is not recommended. You can choose to force the installation, but proceed with caution.")
-                    #             if st.button("Proceed Anyway", key=f"proceed_install_{method_id}"):
-                    #                 st.session_state[f"force_install_{method_id}"] = True
-                    #                 st.rerun()
-                    #             proceed_install = False
-                                
-                    #     if proceed_install:        
-                    #         with st.spinner(f"Installing {method_id}..."):
-                    #             try:
-                    #                 # MethodInstaller gestisce l'installazione nell'env_path specificato
-                    #                 installer = MethodInstaller(
-                    #                     method_config=config,
-                    #                     base_path=project_root,
-                    #                     verbose=True,
-                    #                 )
-                    #                 installer.install(env_path)
-                    #                 st.success("Installation Complete!")
-                    #                 st.session_state.pop(f"force_install_{method_id}", None)  # Reset force flag after installation
-                    #                 st.rerun()
-                    #             except Exception as e:
-                    #                 st.error(f"Error installing: {e}")
-
-                    # if b2.button(
-                    #     "Validate",
-                    #     key=f"val_{method_id}",
-                    #     disabled=not is_installed,
-                    #     use_container_width=True,
-                    # ):
-                    #     #SIGNATURE VERIFICATION
-                    #     proceed_validate = True
-                    #     if toml_path and toml_path.exists():
-                    #         ok = verifier.verify(Path(toml_path))
-                    #         if not ok and not st.session_state.get(f"force_validate_{method_id}", False):
-                    #             st.warning(f"Signature verification FAILED for {toml_path.name}. You can proceed anyway, but be cautious.")
-                    #             if st.button("Proceed Anyway", key=f"proceed_validate_{method_id}"):
-                    #                 st.session_state[f"force_validate_{method_id}"] = True
-                    #                 st.rerun()
-                    #             proceed_validate = False
-
-                    #     if proceed_validate:
-                    #         with st.spinner(f"Validating {method_id}..."):
-                    #             # Validator esegue il comando pixi run validate
-                    #             success = validator.validate_method(method_id, all=True)
-                    #             if success:
-                    #                 st.success("Validation OK!")
-                    #             else:
-                    #                 st.error("Validation Failed! Check the logs for details.")
-                    #             st.session_state.pop(f"force_validate_{method_id}", None)  # Reset force flag after validation
-
-                    # if b3.button(
-                    #     "Uninstall",
-                    #     key=f"uninst_{method_id}",
-                    #     disabled=not is_installed,
-                    #     use_container_width=True,
-                    # ):
-                    #     if env_path.exists():
-                    #         with st.spinner(f"Uninstalling {method_id}..."):
-                    #             try:
-                    #                 uninstall_method(method_id, verbose=True, subcall=False, from_CLI=False)
-                    #                 st.success("Uninstallation Complete!")
-                    #                 st.rerun()
-                    #             except Exception as e:
-                    #                 st.error("Error during uninstallation. Check logs for details.")
-                                    
-                    # if b4.button(
-                    #     "Show Arguments",
-                    #     key = f"args_{method_id}",
-                    #     disabled=show_args_disabled,
-                    #     use_container_width=True,
-                    # ):
-                    #     if not has_help:
-                    #         st.warning("No help section found in the method configuration.")
-                    #         continue
-                        
-                    #     # Signature check for help action
-                    #     proceed_help = True
-                    #     if toml_path and toml_path.exists():
-                    #         ok = verifier.verify(Path(toml_path))
-                    #         if not ok and not st.session_state.get(f"force_help_{method_id}", False):
-                    #             st.warning(f"Signature verification FAILED for `{toml_path.name}`. Press 'Proceed anyway' to continue.")
-                    #             if st.button("Proceed anyway", key=f"proceed_help_{method_id}"):
-                    #                 st.session_state[f"force_help_{method_id}"] = True
-                    #                 st.experimental_rerun()
-                    #             proceed_help = False
-                                
-                    #     if not proceed_help:
-                    #         continue
-                        
-                    #     cmd = [
-                    #         sys.executable,
-                    #         str(project_root / "main.py"),
-                    #         "methods",
-                    #         "help",
-                    #         method_id,
-                    #     ]
-                    #     with st.spinner(f"Fetching parameters for {method_id}..."):
-                    #         try:
-                    #             proc = subprocess.run(
-                    #                 cmd,
-                    #                 cwd=str(project_root),
-                    #                 capture_output=True,
-                    #                 text=True,
-                    #             )
-                    #             stdout = proc.stdout or ""
-                    #             stderr = proc.stderr or ""
-                    #             exit_code = proc.returncode
-
-                    #             # Mostra in modal (fallback a expander se modal non disponibile)
-                    #             try:
-                    #                 with st.modal(f"Parameters — {method_id}"):
-                    #                     if stdout:
-                    #                         st.subheader("Output")
-                    #                         st.code(stdout, language="bash")
-                    #                     else:
-                    #                         st.info(
-                    #                             "No stdout produced by the command."
-                    #                         )
-                    #                     st.caption(f"Exit code: {exit_code}")
-                    #                     st.button(
-                    #                         "Close", key=f"close_params_{method_id}"
-                    #                     )
-                    #             except Exception:
-                    #                 # Fallback
-                    #                 with st.expander(
-                    #                     f"Parameters — {method_id}", expanded=True
-                    #                 ):
-                    #                     if stdout:
-                    #                         st.subheader("Output")
-                    #                         st.code(stdout, language="bash")
-                    #                     else:
-                    #                         st.info(
-                    #                             "No stdout produced by the command."
-                    #                         )
-                    #                     # if stderr:
-                    #                     #     st.subheader("Errors / Stderr")
-                    #                     #     st.code(stderr, language="bash")
-                    #                     st.caption(f"Exit code: {exit_code}")
-                            # except Exception as e:
-                            #     st.error(f"Error fetching parameters: {e}")
-                            
+                    
                     b1_clicked = b1.button(
                         "Install",
                         key=f"inst_{method_id}",

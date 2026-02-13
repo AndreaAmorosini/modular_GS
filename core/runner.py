@@ -12,8 +12,8 @@ from .components.base import MethodRunner
 from .post_processing import filter_ply_by_opacity
 from .utils import RichLogger
 import logging
-
-_custom_logger = logging.getLogger("CustomRunLog")
+import time
+from datetime import datetime
 
 class PipelineRunner:
     def __init__(self, pipeline_config_path: str, overrides: Optional[Dict[str, Any]] = None, verbose: bool = False):
@@ -35,6 +35,8 @@ class PipelineRunner:
         self.logger.info(f"Input File: {self.context.get('input_file', 'Not Set')}")
         self.logger.info(f"Output Dir: {self.context.get_output_dir()}")
         
+        start_time = time.time()
+        
         steps = self.config.get("steps", [])
         for i, step in enumerate(steps):
             method_rel_path = step.get("method")
@@ -54,6 +56,11 @@ class PipelineRunner:
             
         for i, step in enumerate(steps):
             self._run_step(step, i)
+            
+        try:
+            self._augment_pipeline_status(start_time)
+        except Exception as e:
+            self.logger.error(f"Error augmenting pipeline status: {e}")
 
     def _run_step(self, step_config: Dict, index: int):
         step_name = step_config.get("name", f"Step_{index}")
@@ -79,12 +86,6 @@ class PipelineRunner:
 
             env_path = self.envs_base_dir / method_path.stem
             
-            # manifest_path = env_path / "pixi.toml"
-            # shared_meta = env_path / "shared_env.json"
-            # if not manifest_path.exists() and not shared_meta.exists():
-            #      self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
-            #      raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
-
             # Resolving inputs from TOML
             step_inputs = {}
             
@@ -381,7 +382,135 @@ class PipelineRunner:
                 json.dump(status, f, indent=4)
         except Exception as e:
             self.logger.error(f"[ERROR] Could not save status file: {e}")
+            
+    def _count_ply_vertices(self, ply_path: Path) -> int:
+        """Count vertices in a PLY file (binary or ascii)."""
+        try:
+            from plyfile import PlyData
 
+            ply = PlyData.read(str(ply_path))
+            return ply["vertex"].count
+        except Exception:
+            # Fallback ASCII parser: count lines after header
+            try:
+                with open(ply_path, "r", encoding="utf-8", errors="ignore") as f:
+                    header_ended = False
+                    vcount = 0
+                    header_lines = []
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        header_lines.append(line.strip())
+                        if line.strip() == "end_header":
+                            header_ended = True
+                            break
+                    if not header_ended:
+                        return 0
+                    # Count remaining lines as vertices (approx)
+                    for _ in f:
+                        vcount += 1
+                    return vcount
+            except Exception:
+                return 0
+
+
+    def _count_images_in_path(self, path: Path) -> int:
+        """Count image files in a folder (recursively)."""
+        if path is None or not path.exists():
+            return 0
+        exts = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".JPG", ".PNG"}
+        count = 0
+        try:
+            for p in path.rglob("*"):
+                if p.is_file() and p.suffix in exts:
+                    count += 1
+        except Exception:
+            return 0
+        return count
+
+
+    def _augment_pipeline_status(self, start_time: float):
+        """
+        Read pipeline_status.json, compute summary metrics and append them.
+        Called at the end of run().
+        """
+        status_file = self._get_status_file()
+        if not status_file.exists():
+            return
+        try:
+            with open(status_file, "r") as f:
+                status = json.load(f)
+        except Exception:
+            status = {}
+
+        output_dir = self.context.get_output_dir()
+
+        # Find PLY files: originals vs filtered
+        all_plys = list(output_dir.rglob("*.ply"))
+        original_count = 0
+        filtered_count = 0
+        for p in all_plys:
+            name = p.name.lower()
+            try:
+                verts = int(self._count_ply_vertices(p))
+            except Exception:
+                verts = 0
+            if "filter" in name or "filtered" in name or "_filtered" in name:
+                filtered_count += verts
+            else:
+                original_count += verts
+
+        # Count photos used by scanning context keys for folders with images
+        photo_count = 0
+        for k, v in self.context.data.items():
+            try:
+                p = Path(str(v))
+                if p.exists() and p.is_dir():
+                    photo_count += self._count_images_in_path(p)
+            except Exception:
+                continue
+
+        # Methods used and overrides applied
+        methods_used = []
+        overrides_applied = {}
+        for step in self.config.get("steps", []):
+            step_name = step.get("name", "unnamed")
+            method_rel = step.get("method")
+            methods_used.append({"step": step_name, "method": str(method_rel)})
+
+            # collect overrides for this step (keys like "StepName.param")
+            step_prefix = f"{step_name}."
+            step_over = {}
+            for ov_key, ov_val in self.overrides.items():
+                if ov_key.startswith(step_prefix):
+                    param_name = ov_key[len(step_prefix) :]
+                    step_over[param_name] = ov_val
+            if step_over:
+                overrides_applied[step_name] = step_over
+
+        summary = {
+            "original_splats": int(original_count),
+            "filtered_splats": int(filtered_count),
+            "num_photos_used": int(photo_count),
+            "end_time": datetime.utcnow().isoformat() + "Z",
+            "total_duration_s": round(time.time() - start_time, 2),
+            "methods_used": methods_used,
+            "overrides_applied": overrides_applied,
+        }
+
+        # Attach summary under top-level key
+        status_summary = status.get("_pipeline_summary", {})
+        status_summary.update(summary)
+        status["_pipeline_summary"] = status_summary
+
+        try:
+            with open(status_file, "w") as f:
+                json.dump(status, f, indent=4)
+            self.logger.info(f"[Pipeline Summary] {summary}")
+        except Exception as e:
+            self.logger.error(f"Failed to write pipeline summary: {e}")
+        
     def print_help(self):
         """Print all the configurable parameter of the method"""
         self.logger.info(f"\n=== Pipeline: {self.config.get('title', 'Untitled')} ===")

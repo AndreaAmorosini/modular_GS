@@ -13,22 +13,15 @@ from contextlib import contextmanager
 from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 import tomli
 import typer
-
-
-
+import struct
+from rich.console import Console
+from rich.theme import Theme
+from rich.status import Status
+from rich.text import Text
 try:
-    import rerun as rr
-    from rich.console import Console
-    from rich.theme import Theme
-    from rich.status import Status
-    from rich.text import Text
+    import numpy as np
 except ImportError:
-    rr = None
-    Console = None
-    Theme = None
-    Status = None
-    Text = None
-
+    np = None
 
 def get_or_download_pixi(base_dir: Path) -> Path:
     """
@@ -300,61 +293,6 @@ def run_command(
                 logger.critical(f"Comando fallito dopo {retry_limit} tentativi.")
                 raise
 
-
-class RerunVisualizer:
-    """
-    Singleton for managinfg Rerun instances.
-    """
-
-    _instance = None
-
-    @staticmethod
-    def get_instance():
-        if RerunVisualizer._instance is None:
-            if rr is None:
-                logging.warning(
-                    "Module 'rerun' not found."
-                )
-                RerunVisualizer._instance = RerunVisualizer(enabled=False)
-            else:
-                RerunVisualizer._instance = RerunVisualizer(enabled=True)
-        return RerunVisualizer._instance
-
-    def __init__(self, enabled: bool):
-        self.enabled = enabled
-        if self.enabled:
-            try:
-                # "spawn()" avvia il visualizzatore Rerun in un processo separato
-                rr.init("full_pipe_v2", spawn=True)
-                logging.info("Rerun visualizer OK. Connect to visualize.")
-            except Exception as e:
-                logging.error(f"Error while running Rerun: {e}")
-                self.enabled = False
-
-    def log_sfm_results(self, recon_path: Path):
-        """Load a COLMAP model and log on Rerun."""
-        if not self.enabled or not recon_path.exists():
-            return
-
-        logging.info(f"Sending SFM results to Rerun:{recon_path}...")
-        try:
-            # Per una visualizzazione reale, avresti bisogno di pycolmap
-            # import pycolmap
-            # recon = pycolmap.Reconstruction(recon_path)
-            # points_data = ...
-            # rr.log("sfm/points", rr.Points3D(positions=...))
-
-            # Per ora, logghiamo un placeholder
-            rr.log(
-                "sfm/info",
-                rr.TextDocument(f"SFM Results from: {recon_path}"),
-                timeless=True,
-            )
-            logging.info("Risultati SfM inviati (simulato).")
-
-        except Exception as e:
-            logging.warning(f"Rerun visualization for SFM failed: {e}")
-            
 class SignatureVerifier:
     """
     Manage the verification of the TOML files through the expected signature of the functions.

@@ -26,7 +26,9 @@ if str(project_root) not in sys.path:
     
 
 st.set_page_config(
-    page_title="ModularGS - Pipeline Manager", layout="wide", page_icon="🧭"
+    page_title="Modular Gaussian Splatting - Pipeline Manager",
+    layout="wide",
+    page_icon="🧭",
 )
 # render_sidebar(project_root)
 st.title("Pipeline Manager")

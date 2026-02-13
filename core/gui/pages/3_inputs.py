@@ -3,8 +3,50 @@ import sys
 from pathlib import Path
 import shutil
 import time
+import os
+import platform
+import subprocess
 
-st.set_page_config(page_title="Inputs", page_icon="📁", layout="wide")
+st.set_page_config(
+    page_title="Modular Gaussian Splatting - Inputs", page_icon="📁", layout="wide"
+)
+
+
+def open_folder(path="."):
+    """Apre il file explorer gestendo correttamente i percorsi WSL -> Windows."""
+    target_path = os.path.abspath(path)
+    system = platform.system()
+
+    if system == "Linux" and "microsoft" in platform.release().lower():
+        try:
+            win_path = (
+                subprocess.check_output(["wslpath", "-w", target_path]).decode().strip()
+            )
+            subprocess.run(["explorer.exe", win_path])
+            return
+        except Exception:
+            pass
+
+    if system == "Windows":
+        os.startfile(target_path)
+    elif system == "Darwin":
+        subprocess.run(["open", target_path])
+    else:
+        try:
+            subprocess.run(["xdg-open", target_path])
+        except Exception:
+            st.info(f"Open folder: {target_path}")
+
+
+def human_readable_size(nbytes: int) -> str:
+    if nbytes < 1024:
+        return f"{nbytes} B"
+    for unit in ("KB", "MB", "GB", "TB"):
+        nbytes /= 1024.0
+        if nbytes < 1024.0:
+            return f"{nbytes:.2f} {unit}"
+    return f"{nbytes:.2f} PB"
+
 
 # Trova project root risalendo finché non trova la cartella 'inputs' (fallback a 3 livelli)
 current_file = Path(__file__).resolve()
@@ -29,7 +71,7 @@ st.markdown(
     "The uploaded files will be saved in a subfolder of `inputs/` with the name you specify. If no name is given, a timestamp-based folder will be created. You can also choose to overwrite existing files or keep both by automatically renaming the new ones."
 )
 
-# Upload modal trigger
+# Upload area (unchanged)
 with st.expander("Upload files", expanded=False):
     st.write(
         "Load photos (multiple) or a single video. Uploaded files will be saved in a subfolder of `inputs/` with the name you specify."
@@ -39,12 +81,14 @@ with st.expander("Upload files", expanded=False):
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
         help="You can select multiple images.",
+        max_upload_size=3000,  # 3GB limit for photos
     )
     video = st.file_uploader(
         "Load a single video (mp4,mov,avi,mkv)",
         type=["mp4", "mov", "avi", "mkv"],
         accept_multiple_files=False,
         help="If you upload a video, do not upload photos in the same operation (optional).",
+        max_upload_size=5000,  # 5GB limit for videos
     )
     col1, col2 = st.columns(2)
     with col1:
@@ -72,7 +116,6 @@ with st.expander("Upload files", expanded=False):
             target_dir.mkdir(parents=True, exist_ok=True)
             saved = 0
             errors = []
-            # Save photos
             for f in photos or []:
                 try:
                     dest = target_dir / f.name
@@ -88,7 +131,6 @@ with st.expander("Upload files", expanded=False):
                     saved += 1
                 except Exception as e:
                     errors.append(f"{f.name}: {e}")
-            # Save video (single)
             if video is not None:
                 try:
                     dest = target_dir / video.name
@@ -112,10 +154,8 @@ with st.expander("Upload files", expanded=False):
                 for e in errors:
                     st.error(e)
             st.rerun()
-            
-# Lista file e anteprime
+
 st.subheader("inputs/ Contents")
-# Escludi .gitkeep e mostra file organizzati per cartella
 all_files = sorted(
     [p for p in inputs_dir.rglob("*") if p.is_file() and p.name != ".gitkeep"]
 )
@@ -123,71 +163,97 @@ all_files = sorted(
 if not all_files:
     st.info("No file in `inputs/`.")
 else:
-    # Raggruppa file per cartella relativa sotto inputs_dir
     groups = {}
     for p in all_files:
         rel = p.relative_to(inputs_dir)
         folder = rel.parent.as_posix()  # "" per root
         groups.setdefault(folder, []).append(p)
 
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
+    video_exts = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+
     for folder, files in sorted(groups.items()):
         disp_folder = folder or "/"
-        with st.expander(f"{disp_folder} — {len(files)} file", expanded=False):
-            # mostra cartelle annidate: se folder contiene sottocartelle, mostrale come sottogruppi
-            # raggruppiamo per subfolder immediato
-            subgroups = {}
-            for p in files:
-                rel = p.relative_to(inputs_dir)
-                parts = rel.parts
-                if len(parts) > 1:
-                    sub = parts[0]
-                else:
-                    sub = ""  # file nella cartella corrente
-                subgroups.setdefault(sub, []).append(p)
+        folder_key = folder.replace("/", "__") if folder else "root"
+        folder_path = inputs_dir / folder if folder else inputs_dir
 
-            for sub, subfiles in sorted(subgroups.items()):
-                if sub:
-                    st.markdown(f"**{sub}/** — {len(subfiles)} file")
-                cols = st.columns(3)
-                i = 0
-                for p in subfiles:
-                    c = cols[i % 3]
-                    i += 1
-                    name = p.name
-                    suffix = p.suffix.lower()
-                    try:
-                        if suffix in [".jpg", ".jpeg", ".png", ".webp"]:
-                            with c:
-                                st.image(str(p), caption=name, width=200)
-                                st.write(name)
-                                st.download_button(
-                                    label="Download",
-                                    data=p.read_bytes(),
-                                    file_name=name,
-                                    key=f"dl_{p}",
-                                )
-                        elif suffix in [".mp4", ".mov", ".avi", ".mkv", ".webm"]:
-                            with c:
-                                st.video(str(p))
-                                st.write(name)
-                                st.download_button(
-                                    label="Download",
-                                    data=p.read_bytes(),
-                                    file_name=name,
-                                    key=f"dl_{p}",
-                                )
-                        else:
-                            with c:
-                                st.write(name)
-                                st.download_button(
-                                    label="Download",
-                                    data=p.read_bytes(),
-                                    file_name=name,
-                                    key=f"dl_{p}",
-                                )
-                    except Exception as e:
-                        with c:
-                            st.write(name)
-                            st.error(f"Preview not available: {e}")
+        with st.expander(f"{disp_folder} — {len(files)} file", expanded=False):
+            cols = st.columns([4, 1, 1])
+            # Compute summary
+            total_size = 0
+            has_images = False
+            has_videos = False
+            for p in files:
+                try:
+                    total_size += p.stat().st_size
+                    suf = p.suffix.lower()
+                    if suf in image_exts:
+                        has_images = True
+                    if suf in video_exts:
+                        has_videos = True
+                except Exception:
+                    continue
+
+            if has_images and not has_videos:
+                typ = "Images"
+            elif has_videos and not has_images:
+                typ = "Video"
+            elif has_images and has_videos:
+                typ = "Mixed (images & video)"
+            else:
+                typ = "Other"
+
+            with cols[0]:
+                st.write(f"**Type:** {typ}")
+                st.write(f"**Size:** {human_readable_size(total_size)}")
+                st.write(f"**Files:** {len(files)}")
+
+            with cols[1]:
+                if st.button(
+                    "📂 Open Folder",
+                    key=f"open_folder_{folder_key}",
+                    use_container_width=True,
+                ):
+                    open_folder(folder_path)
+
+            # Delete with confirmation
+            confirm_key = f"confirm_delete_{folder_key}"
+            if confirm_key not in st.session_state:
+                st.session_state[confirm_key] = False
+
+            with cols[2]:
+                if not st.session_state[confirm_key]:
+                    if st.button(
+                        "🗑️ Delete", key=f"del_{folder_key}", use_container_width=True
+                    ):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
+                else:
+                    st.warning(f"Confirm delete `{disp_folder}`?")
+                    c1, c2 = st.columns(2)
+                    if c1.button("Confirm", key=f"del_confirm_{folder_key}"):
+                        try:
+                            if folder_path.exists():
+                                if folder_path.is_dir():
+                                    # If root (""), delete children not the inputs_dir itself
+                                    if folder == "":
+                                        for child in folder_path.iterdir():
+                                            if child.is_dir():
+                                                shutil.rmtree(child)
+                                            else:
+                                                child.unlink()
+                                    else:
+                                        shutil.rmtree(folder_path)
+                                else:
+                                    folder_path.unlink()
+                            st.success(f"Deleted `{disp_folder}`")
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
+                        finally:
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                    if c2.button("Cancel", key=f"del_cancel_{folder_key}"):
+                        st.session_state[confirm_key] = False
+                        st.rerun()
 
 st.caption("Ricarica la pagina dopo l'upload per vedere i nuovi file se necessario.")

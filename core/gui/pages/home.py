@@ -4,6 +4,8 @@ import subprocess
 import time
 import os
 from pathlib import Path
+import signal
+import tomli_w
 
 try:
     import tomllib as toml
@@ -51,7 +53,7 @@ def required_methods_from_pipeline(parsed: dict):
             req.add(method_name)
     return req
 
-@st.cache_data(ttl=1300)
+@st.cache_data(ttl=300)
 def installed_methods(envs: Path):
     res = set()
     if not envs.exists():
@@ -61,7 +63,7 @@ def installed_methods(envs: Path):
             res.add(d.name)
     return res
 
-st.cache_data(ttl=1300)
+st.cache_data(ttl=300)
 def load_pipeline_files(d: Path):
     """Return pipeline files that have all required methods installed."""
     all_files = sorted([p for p in d.iterdir() if p.is_file() and p.suffix == ".toml"])
@@ -132,6 +134,32 @@ if selected_name and selected_name != "-- select --":
         if meta.get("description"):
             st.markdown(meta["description"])
             
+        global_opts = parsed.get("global_options", {}) or {}
+        has_threshold = "filter_opacity_threshold" in global_opts
+        default_threshold = float(global_opts.get("filter_opacity_threshold", 0.1))
+        state_key_global = f"global_opts_{selected_name}"
+        
+        if state_key_global not in st.session_state:
+            st.session_state[state_key_global] = {"use_filter": bool(has_threshold), "threshold": default_threshold}
+            
+        with st.expander("Global Options", expanded=has_threshold):
+            use_filter = st.checkbox("Use opacity filter", value=st.session_state[state_key_global]["use_filter"], key=f"use_filter_{selected_name}")
+            st.session_state[state_key_global]["use_filter"] = use_filter
+            
+            if use_filter:
+                thr = st.number_input(
+                    "Opacity Threshold",
+                    min_value = 0.0,
+                    max_value = 1.0,
+                    value = float(st.session_state[state_key_global]["threshold"]),
+                    step = 0.01,
+                    format="%.2f",
+                    key=f"{state_key_global}_threshold_{selected_name}"
+                )
+                st.session_state[state_key_global]["threshold"] = float(thr)
+            else:
+                thr = st.session_state[state_key_global]["threshold"]  # Keep previous value even if not used
+            
         default_overrides = build_overrides_from_steps(parsed, selected_name)
         edits = {}
         if default_overrides:
@@ -175,7 +203,6 @@ if selected_name and selected_name != "-- select --":
             st.session_state[output_key] = default_out
             st.session_state[prev_input_key] = selected_input
         
-        # default_out = f"output/{selected_input.split('/')[-1].split('.')[0]}_{selected_path.stem}_{int(time.time())}"
         output_name = st.text_input("Output name (relative to project root):", value=st.session_state.get(output_key, default_out), key=f"output_{selected_name}")
         
         c1, c2 = st.columns(2)
@@ -190,12 +217,12 @@ if selected_name and selected_name != "-- select --":
             st.session_state.pipeline_status = None
             
         if stop_clicked and st.session_state.pipeline_proc:
+            proc = st.session_state.pipeline_proc
             try:
-                proc = st.session_state.pipeline_proc
-                proc.terminate()
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 time.sleep(0.5)
                 if proc.poll() is None:
-                    proc.kill()
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 status_area.info("Pipeline stopped by user.")
             except Exception as e:
                 status_area.error(f"Error stopping process: {e}")
@@ -204,6 +231,13 @@ if selected_name and selected_name != "-- select --":
                 st.session_state.pipeline_cmd = None
                 st.session_state.pipeline_running = False
                 st.session_state.pipeline_status = {"type": "info", "msg" : "Pipeline stopped."}
+                # Clean tmp file if created
+                tmp = st.session_state.get("pipeline_tmp", None)
+                if tmp:
+                    try:
+                        Path(tmp).unlink()
+                    except Exception:
+                        pass
                 st.rerun()
                 
         if st.session_state.get("pipeline_status"):
@@ -250,6 +284,27 @@ if selected_name and selected_name != "-- select --":
                 st.session_state[attempt_key] = False
                 st.session_state.pop(force_key, None)
                 st.session_state.pipeline_status = None
+                
+                pipeline_file_to_run = selected_path
+                
+                global_state = st.session_state[state_key_global]
+                if global_state.get("use_filter", False):
+                    tmp_dir = project_root / ".tmp"
+                    tmp_dir.mkdir(parents=True, exist_ok=True)
+                    tmp_path = tmp_dir / f"{selected_name}_tmp.toml"
+                    
+                    parsed_copy = parsed.copy()
+                    go = parsed_copy.setdefault("global_options", {})
+                    go["filter_opacity_threshold"] = float(global_state.get("threshold", default_threshold))
+                    
+                    with open(tmp_path, "wb") as f:
+                        tomli_w.dump(parsed_copy, f)
+                    pipeline_file_to_run = tmp_path
+                    st.session_state["pipeline_tmp"] = str(pipeline_file_to_run)
+                else:
+                    pipeline_file_to_run = selected_path
+                    st.session_state["pipeline_tmp"] = None
+                
                 cmd = [sys.executable, str(project_root / "main.py"), "run", str(selected_path)]
                 if selected_input and selected_input != "-- none --":
                     cmd += ["--input", str(project_root / "inputs" / selected_input)]
@@ -261,10 +316,11 @@ if selected_name and selected_name != "-- select --":
                     else:
                         valstr = str(v)
                     cmd += ["--set", f"{k}={valstr}"]
-                    cmd += ["--verbose"]
+                cmd += ["--gui"]
+                cmd += ["--verbose"]
 
                 try:
-                    proc = subprocess.Popen(cmd, cwd=str(project_root))
+                    proc = subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True)
                     st.session_state.pipeline_proc = proc
                     st.session_state.pipeline_cmd = cmd
                     st.session_state.pipeline_running = True
@@ -304,6 +360,14 @@ if selected_name and selected_name != "-- select --":
                 st.session_state.pipeline_proc = None
                 st.session_state.pipeline_cmd = None
                 st.session_state.pipeline_running = False
+                
+                #Clean tmp file if created
+                tmp = st.session_state.get("pipeline_tmp", None)
+                if tmp:
+                    try:
+                        Path(tmp).unlink()
+                    except Exception:
+                        pass
                 st.rerun()           
                 
 

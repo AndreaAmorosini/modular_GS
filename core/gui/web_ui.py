@@ -10,11 +10,8 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-# print(f"Project Root: {project_root}")
 
 try:
-    from core.components.base import MethodRunner
-    from core.utils import RichLogger
     from core.gui.elements.sidebar import render_sidebar
 except ImportError as e:
     print(f"Error importing MethodRunner: {e}")

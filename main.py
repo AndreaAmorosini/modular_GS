@@ -127,6 +127,9 @@ def run(
     show_info: Annotated[
         bool, typer.Option("--info", help="Show the pipeline overrideable parameters.")
     ] = False,
+    isGui: Annotated[
+        bool, typer.Option("--gui", help="Flag to indicate if running from the GUI (disables interactive file verification).")
+    ] = False,
 ):
     """Execute the pipeline defined in the given TOML configuration file."""
     logger = setup_logging(
@@ -160,7 +163,8 @@ def run(
                     pass 
             overrides[key] = val
             
-    verify_file_interactive(config_file, verbose=verbose)
+    if not isGui:
+        verify_file_interactive(config_file, verbose=verbose)
 
     try:
         # Passiamo overrides direttamente nel costruttore
