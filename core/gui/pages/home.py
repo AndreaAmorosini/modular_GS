@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import signal
 import tomli_w
+import json
 
 try:
     import tomllib as toml
@@ -106,6 +107,41 @@ def build_overrides_from_steps(parsed: dict, prefix: str):
             overrides[f"{step_name}.{k}"] = v
     return overrides
 
+def get_output_status(path: Path, project_root: Path):
+    """Check if output path exists and return status message."""
+    
+    out = {"exists": False, "empty":True, "status_json": None, "detected_steps": [], "entries_count": 0}
+    if not path:
+        return out
+    
+    p = Path(path)
+    if not p.is_absolute():
+        p = project_root / p
+        
+    out["exists"] = p.exists()
+    if not p.exists():
+        return out
+    
+    entries = [e for e in p.iterdir() if e.name != ".gitkeep"]
+    out["entries_count"] = len(entries)
+    out["empty"] = len(entries) == 0
+    
+    status_file = p / "pipeline_status.json"
+    if status_file.exists() and status_file.is_file():
+        try:
+            text = status_file.read_text(encoding="utf-8")
+            parsed = json.loads(text)
+            out["status_json"] = parsed
+            out["detected_steps"] = list(parsed.keys())
+            out["empty"] = False
+            return out
+        except Exception:
+            pass
+        
+    # Fallback: try to detect steps from file names
+    out["detected_steps"] = [e.name for e in entries if e.is_dir()]
+    return out
+
 def _fmt(x):
     return "--select an option--" if x is None else x
 
@@ -204,6 +240,24 @@ if selected_name and selected_name != "-- select --":
             st.session_state[prev_input_key] = selected_input
         
         output_name = st.text_input("Output name (relative to project root):", value=st.session_state.get(output_key, default_out), key=f"output_{selected_name}")
+        
+        resolved_output = Path(output_name) if Path(output_name).is_absolute() else (project_root / output_name)
+        out_status = get_output_status(resolved_output, project_root)
+        
+        if not out_status["exists"]:
+            st.info(f"Output path `{output_name}` does not exist. It will be created by the pipeline.")
+        else:
+            if out_status["empty"]:
+                st.warning(f"Output path `{output_name}` already exists but is empty. Make sure this is intentional to avoid overwriting important data.")
+            else:
+                if out_status["status_json"]:
+                    st.warning(f"Output path `{output_name}` already exists and contains a `pipeline_status.json` indicating detected steps: {', '.join(out_status['detected_steps'])}.")
+                    with st.expander("Pipeline Status Details", expanded=False):
+                        st.json(out_status["status_json"])
+                elif out_status["detected_steps"]:
+                    st.warning(f"Output path `{output_name}` already exists and contains {out_status['entries_count']} entries, with detected steps: {', '.join(out_status['detected_steps'])}.")
+                else:
+                    st.warning(f"Output path `{output_name}` already exists and contains {out_status['entries_count']} entries. Make sure this is intentional to avoid overwriting important data.")
         
         c1, c2 = st.columns(2)
         start_clicked = c1.button("Start Pipeline", key=f"start_{selected_name}", disabled=st.session_state.get("pipeline_running", False))
@@ -318,6 +372,9 @@ if selected_name and selected_name != "-- select --":
                     cmd += ["--set", f"{k}={valstr}"]
                 cmd += ["--gui"]
                 cmd += ["--verbose"]
+                
+                if out_status.get("exists") and not out_status.get("empty"):
+                    cmd += ["--restart"]
 
                 try:
                     proc = subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True)

@@ -7,9 +7,11 @@ filter_opacity_threshold = 0.1
 [[steps]]
 name = "Extraction"
 method = "methods/preprocess/sharp_frames.toml"
-
 [steps.inputs]
 video = "{{context.input_file}}"
+[steps.kwargs]
+num_frames = 400
+
 
 [[steps]]
 name = "StructureFromMotion"

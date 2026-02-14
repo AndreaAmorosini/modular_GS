@@ -4,6 +4,8 @@ import os
 import platform
 import subprocess
 from pathlib import Path
+import json
+from datetime import datetime
 
 # Rileva project root (stesso comportamento delle altre pagine)
 current_file = Path(__file__).resolve()
@@ -123,4 +125,72 @@ else:
                 if st.button("📂 Final Splat", key=f"gs_{d.name}", disabled=disabled_gs, use_container_width=True):
                     open_folder(gs_path.parent)
             
+            status_file = d / "pipeline_status.json"
+            if status_file.exists():
+                try:
+                    data = json.loads(status_file.read_text(encoding="utf-8"))
+                    summary = data.get("_pipeline_summary", {})
+                    if summary:
+                        with st.expander("Pipeline Summary", expanded=False):
+                            # Format end_time
+                            end_raw = summary.get("end_time")
+                            end_display = end_raw
+                            if end_raw:
+                                try:
+                                    # try common ISO formats
+                                    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"):
+                                        try:
+                                            dt = datetime.strptime(end_raw, fmt)
+                                            end_display = dt.strftime("%Y-%m-%d %H:%M:%SZ")
+                                            break
+                                        except Exception:
+                                            continue
+                                except Exception:
+                                    end_display = end_raw
+                            if end_display:
+                                st.write(f"**End Time:** {end_display}")
+
+                            # Format duration as dd:HH:mm:ss (prefer explicit formatted field if present)
+                            if "total_duration" in summary and summary.get("total_duration"):
+                                dur_display = summary.get("total_duration")
+                            else:
+                                total_secs = int(round(summary.get("total_duration_s", 0)))
+                                days = total_secs // 86400
+                                rem = total_secs % 86400
+                                hours = rem // 3600
+                                rem = rem % 3600
+                                minutes = rem // 60
+                                seconds = rem % 60
+                                dur_display = f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
+                            st.write(f"**Total Duration:** {dur_display}")
+
+                            # keep numeric seconds for reference if present
+                            if "total_duration_s" in summary:
+                                try:
+                                    st.write(f"**Total Duration (s):** {float(summary.get('total_duration_s')):.2f}")
+                                except Exception:
+                                    pass
+
+                            for key in ("original_splats", "filtered_splats"):
+                                if key in summary:
+                                    display_key = key.replace("_", " ").capitalize()
+                                    st.write(f"**{display_key}:** {summary.get(key)}")
+
+                            if "methods_used" in summary:
+                                st.write("**Methods used:**")
+                                for m in summary.get("methods_used", []):
+                                    step = m.get("step", "")
+                                    method = m.get("method", "")
+                                    st.write(f"- {step}: {method}")
+
+                            overrides = summary.get("overrides_applied")
+                            if overrides:
+                                with st.expander("Overrides Applied", expanded=False):
+                                    for step_name, vals in overrides.items():
+                                        with st.expander(step_name, expanded=False):
+                                            st.json(vals)
+                except Exception as e:
+                    st.error(f"Could not read pipeline_status.json for {d.name}: {e}")
             st.divider()
+            
+            

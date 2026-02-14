@@ -3,10 +3,11 @@ name: Auto-Sign TOML Configurations
 on:
   push:
     paths:
-      - '**.toml'
+      - '**/*.toml'
       - '.github/workflows/auto_sign.yml'
     branches:
       - main  # O il tuo branch principale
+  workflow_dispatch: {}
 
 jobs:
   sign-configs:

@@ -448,29 +448,108 @@ class PipelineRunner:
 
         # Find PLY files: originals vs filtered
         all_plys = list(output_dir.rglob("*.ply"))
-        original_count = 0
+
+        def is_filtered_name(name: str) -> bool:
+            ln = name.lower()
+            return ("filter" in ln) or ("filtered" in ln) or ("_filtered" in ln)
+
+        # Separate filtered vs non-filtered
+        filtered_plys = [p for p in all_plys if is_filtered_name(p.name)]
+        non_filtered_plys = [p for p in all_plys if p not in filtered_plys]
+
+        # Compute filtered_count by summing verts of filtered PLYs
         filtered_count = 0
-        for p in all_plys:
-            name = p.name.lower()
+        for p in filtered_plys:
             try:
                 verts = int(self._count_ply_vertices(p))
             except Exception:
                 verts = 0
-            if "filter" in name or "filtered" in name or "_filtered" in name:
-                filtered_count += verts
-            else:
-                original_count += verts
+            filtered_count += verts
 
-        # Count photos used by scanning context keys for folders with images
-        photo_count = 0
-        for k, v in self.context.data.items():
+        # For original_count: pick the most recently modified non-filtered PLY,
+        # excluding any named 'final_gaussian.ply' and any with 'filtered' in the name.
+        original_count = 0
+        candidates = [p for p in non_filtered_plys if "final_gaussian" not in p.name.lower() and not is_filtered_name(p.name)]
+
+        if candidates:
+            # choose the most recently modified candidate
+            candidates.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            chosen_original_ply = candidates[0]
             try:
-                p = Path(str(v))
-                if p.exists() and p.is_dir():
-                    photo_count += self._count_images_in_path(p)
+                original_count = int(self._count_ply_vertices(chosen_original_ply))
             except Exception:
-                continue
+                original_count = 0
+        else:
+            # fallback: if no suitable candidate, keep original_count = 0
+            original_count = 0
+        
+        
+        # # Count photos used by scanning context keys for folders with images
+        # photo_count = 0
+        # for k, v in self.context.data.items():
+        #     try:
+        #         p = Path(str(v))
+        #         if p.exists() and p.is_dir():
+        #             photo_count += self._count_images_in_path(p)
+        #     except Exception:
+        #         continue
 
+        # Count photos: pick a single representative images folder (the one with the most images)
+        # photo_count = 0
+        # outputs_root = (self.base_path / "output").resolve()
+        # envs_root = self.envs_base_dir.resolve()
+
+        # def _is_ignored_dir(p: Path) -> bool:
+        #     try:
+        #         p_res = p.resolve()
+        #     except Exception:
+        #         return True
+        #     try:
+        #         if outputs_root == p_res or outputs_root in p_res.parents:
+        #             return True
+        #     except Exception:
+        #         pass
+        #     try:
+        #         if envs_root == p_res or envs_root in p_res.parents:
+        #             return True
+        #     except Exception:
+        #         pass
+        #     return False
+
+        # # Collect unique candidate directories from context (only directories)
+        # candidates = set()
+        # for k, v in self.context.data.items():
+        #     try:
+        #         p = Path(str(v))
+        #         if p.exists() and p.is_dir():
+        #             p_res = p.resolve()
+        #             if not _is_ignored_dir(p_res):
+        #                 candidates.add(p_res)
+        #     except Exception:
+        #         continue
+
+        # # Remove nested directories: keep only top-level candidates
+        # candidates_sorted = sorted(candidates, key=lambda p: len(str(p)))
+        # top_level = []
+        # for c in candidates_sorted:
+        #     if any(str(c).startswith(str(other) + os.sep) or c == other for other in top_level):
+        #         continue
+        #     top_level.append(c)
+
+        # # If there are multiple top-level candidates, pick the one with the most image files
+        # best_count = 0
+        # best_dir = None
+        # for c in top_level:
+        #     try:
+        #         cnt = self._count_images_in_path(c)
+        #         if cnt > best_count:
+        #             best_count = cnt
+        #             best_dir = c
+        #     except Exception:
+        #         continue
+
+        # photo_count = best_count
+        
         # Methods used and overrides applied
         methods_used = []
         overrides_applied = {}
@@ -492,7 +571,6 @@ class PipelineRunner:
         summary = {
             "original_splats": int(original_count),
             "filtered_splats": int(filtered_count),
-            "num_photos_used": int(photo_count),
             "end_time": datetime.utcnow().isoformat() + "Z",
             "total_duration_s": round(time.time() - start_time, 2),
             "methods_used": methods_used,

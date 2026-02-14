@@ -32,7 +32,7 @@ validation_command = "sharp-frames --help"
 
 # Esempio di sezione execution per future pipeline
 [execution]
-command = "sharp-frames {{inputs.video}} {{outputs.sharp_images}} --selection-method best-n --num-frames 400 --min-buffer 3"
+command = "sharp-frames {{inputs.video}} {{outputs.sharp_images}} --selection-method best-n --num-frames {{kwargs.num_frames}} --min-buffer 3"
 
 [execution.outputs]
 sharp_images = "{{step_output_dir}}/images"

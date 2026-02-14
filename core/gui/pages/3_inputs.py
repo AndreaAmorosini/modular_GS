@@ -67,93 +67,17 @@ if not inputs_dir.exists():
 st.title("📁 Inputs")
 
 st.markdown(
-    "Show the files available in the `inputs/` folder and let you upload new ones. You can upload photos or a single video that will be used as input for the pipeline."
-    "The uploaded files will be saved in a subfolder of `inputs/` with the name you specify. If no name is given, a timestamp-based folder will be created. You can also choose to overwrite existing files or keep both by automatically renaming the new ones."
+    "Show the files available in the `inputs/` folder . You can upload photos or a single video that will be used as input for the pipeline by opening the input folder and copying the necessaries files."
 )
 
 # Upload area (unchanged)
-with st.expander("Upload files", expanded=False):
-    st.write(
-        "Load photos (multiple) or a single video. Uploaded files will be saved in a subfolder of `inputs/` with the name you specify."
-    )
-    photos = st.file_uploader(
-        "Load Photos (jpg/png)",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-        help="You can select multiple images.",
-        max_upload_size=3000,  # 3GB limit for photos
-    )
-    video = st.file_uploader(
-        "Load a single video (mp4,mov,avi,mkv)",
-        type=["mp4", "mov", "avi", "mkv"],
-        accept_multiple_files=False,
-        help="If you upload a video, do not upload photos in the same operation (optional).",
-        max_upload_size=5000,  # 5GB limit for videos
-    )
-    col1, col2 = st.columns(2)
-    with col1:
-        overwrite = st.checkbox("Overwrite existing files", value=False)
-    with col2:
-        folder_name = st.text_input(
-            "Destination folder name (required if uploading files)", value=""
-        ).strip()
-
-    uploaded_count = len(photos or []) + (1 if video is not None else 0)
-    if uploaded_count == 0:
-        st.info("No file selected.")
-    if st.button("Save uploaded files", type="primary"):
-        if uploaded_count > 0 and folder_name == "":
-            st.error(
-                "Give a name for the destination folder to save the uploaded files."
-            )
-        else:
-            safe_folder = (
-                Path(folder_name).name
-                if folder_name
-                else time.strftime("%Y%m%d_%H%M%S")
-            )
-            target_dir = inputs_dir / safe_folder
-            target_dir.mkdir(parents=True, exist_ok=True)
-            saved = 0
-            errors = []
-            for f in photos or []:
-                try:
-                    dest = target_dir / f.name
-                    if dest.exists() and not overwrite:
-                        base = dest.stem
-                        ext = dest.suffix
-                        i = 1
-                        while (target_dir / f"{base}_{i}{ext}").exists():
-                            i += 1
-                        dest = target_dir / f"{base}_{i}{ext}"
-                    with open(dest, "wb") as out:
-                        out.write(f.getbuffer())
-                    saved += 1
-                except Exception as e:
-                    errors.append(f"{f.name}: {e}")
-            if video is not None:
-                try:
-                    dest = target_dir / video.name
-                    if dest.exists() and not overwrite:
-                        base = dest.stem
-                        ext = dest.suffix
-                        i = 1
-                        while (target_dir / f"{base}_{i}{ext}").exists():
-                            i += 1
-                        dest = target_dir / f"{base}_{i}{ext}"
-                    with open(dest, "wb") as out:
-                        out.write(video.getbuffer())
-                    saved += 1
-                except Exception as e:
-                    errors.append(f"{video.name}: {e}")
-            if saved:
-                st.success(
-                    f"Saved {saved} files in `{str(target_dir.relative_to(project_root))}`"
-                )
-            if errors:
-                for e in errors:
-                    st.error(e)
-            st.rerun()
+with st.expander("Actions", expanded=False):
+    st.write("Open `inputs/` folder or Update inputs list. Every input should be placed inside its own subfolder with a chosen name")
+    c1, c2 = st.columns(2)
+    if c1.button("📂 Open Inputs Folder", use_container_width=True):
+        open_folder(str(inputs_dir))
+    if c2.button("🔄 Update List", use_container_width=True):
+        st.rerun()
 
 st.subheader("inputs/ Contents")
 all_files = sorted(

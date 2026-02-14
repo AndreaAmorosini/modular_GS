@@ -10,6 +10,8 @@ method = "methods/preprocess/sharp_frames.toml"
 # Questa chiave userà il valore passato via CLI --input
 [steps.inputs]
 video = "{{context.input_file}}"
+[steps.kwargs]
+num_frames = 400
 
 [[steps]]
 name = "StructureFromMotion"
