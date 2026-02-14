@@ -37,4 +37,4 @@ command = "sharp-frames {{inputs.video}} {{outputs.sharp_images}} --selection-me
 [execution.outputs]
 sharp_images = "{{step_output_dir}}/images"
 
-# MODULAR_GS_SIGNATURE: 0ba1cb344009e182d831f49e6a358367db27071d45f638d770e20970b23d0e284911b3fdc2313a86adde93a534a9d736bc07cef4a91ff8d97248b921fb9a1b8b
+# MODULAR_GS_SIGNATURE: 71a4a2c7921681fdc4e888d405fc91f237189b4252a9ee8592e163a979085ee78a3f9d798a64c54f183c6eddf17fc8be323ef9fde4d340b45647a3a0980d981d
