@@ -113,4 +113,4 @@ cp -rn {{inputs.images_dir}}/* {{outputs.model_dir}}/images/
 [execution.outputs]
 model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: d2abb86429a338577e13562183e46454eae30b29697614beed0876ebae5612c9f68fcd1112ceb913a8f92d30eb5883ed6a3fb5c1331c60962607d2bc723619c2
+# MODULAR_GS_SIGNATURE: c0420b3134385f94b2913cb7dc904b1618ff344716c6e2946cd4e570cd52de77d6e80ac8450fde466be3247e0e5185e303c3882ef45e50e9a621f7149374d6ad

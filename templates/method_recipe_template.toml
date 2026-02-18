@@ -49,4 +49,4 @@ help_command = "HELP_COMMAND" # Specify the command to run for showing the help 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: SIGNATURE       #Here will be added the security signature from the github actions 
+# MODULAR_GS_SIGNATURE: c9a54deea2f232b3e3b09fd78f65be1809674a4eccdaf5c98c75e3554132a6e6899249fa2be1e4efcff3df764e5b3a80fac9824b23bcffb7dafe84cfe81cb11b

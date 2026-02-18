@@ -70,4 +70,4 @@ help_command = "python {{method_vendor_dir}}/gaussian_splatting_pup/train.py --h
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: c5227fb2c0e0d7a1f746f6827ec4bea72a87f3dca4b8392ff2cd588e0b34d919004440fe532c7a7d88624e731e997878294cb9d2ab69167e6458b0adf81e00e2
+# MODULAR_GS_SIGNATURE: 27ac100990c68037bdd9c19eb6e0ef8c685ecb7c11b62a307a1c470539f2b94c3011599ae52ff90c30abe4fa71a510b7c5a46317d466c85a787d11cd3cb81291
