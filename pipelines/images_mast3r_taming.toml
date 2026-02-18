@@ -1,0 +1,29 @@
+title = "Images to Gaussian Splatting (MASt3R)"
+description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Splatting."
+
+[global_options]
+filter_opacity_threshold = 0.05
+
+[[steps]]
+name = "StructureFromMotion"
+method = "methods/sfm/mast3r_sfm.toml"
+[steps.inputs]
+# Prende l'output dello step precedente
+images_dir = "{{context.input_file}}"
+[steps.kwargs]
+scenegraph_type = "swin"
+# Definiamo la chiave con cui salvare l'output nel contesto per il prossimo step
+output_key = "sfm_ready_path"
+primary_output = "model_dir"
+
+
+[[steps]]
+name = "Training"
+method = "methods/splat/taming_3dgs.toml"
+[steps.inputs]
+#{StepName}_{output_name}
+source_path = "{{context.StructureFromMotion_model_dir}}"
+[steps.kwargs]
+iterations = 15000
+
+# MODULAR_GS_SIGNATURE: 84cc9c83cfa87185c55665c28c2b671cd6ae62474c1e88b15f84f002e0686bf270a1287aca55d5e9726386dadb3b55ff3e1a765feae37f4122f11570bd5c573d

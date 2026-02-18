@@ -130,7 +130,7 @@ for category in sorted(categories.keys()):
             is_installed = (env_path / ".install_complete").exists()
             
             #Check for help section in toml (calculated in validation)
-            has_help = bool(config.get("has_help", False))
+            has_help = bool(config.get("has_help", True))
                     
             show_args_disabled = (not is_installed) or (not has_help)
 
