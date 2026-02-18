@@ -1,0 +1,52 @@
+title = "TITLE_OF_METHOD"
+description = "DESCRIPTION_TO_SHOW_IN_DASHBOARD"
+url = "ORIGINAL_URL"
+type = "TYPE_OF_METHOD"
+
+[environment]
+python_version = "PYTHON_VER" # Specify the Python version to use
+cuda = "CUDA_VER" #Specify CUDA version to use
+PYTHONNOUSERSITE = "1"
+torch_version = "TORCH_VER" # Specify the PyTorch version to use
+torchvision_version = "TORCHVISION_VER" # Specify the torchvision version to use
+
+[installation]
+shared_env = true # Set to true if the method can be installed in a shared environment, false if it requires a dedicated environment.
+channels = ["pytorch", "nvidia", "conda-forge"] # List of conda channels to use for installation, only add channels and don't remove any of these
+
+
+dependencies = [        #List of conda dependencies to install, specify version if needed, e.g. "python=3.10", "pytorch=2.7.*", otherwise it will install the latest version available in the specified channels
+
+]
+
+pip_dependencies = [    #List of pip dependencies to install, specify version if needed.
+]
+
+build_commands = [  #Specify any additional build command that will be executed after the installation of pip and conda packages (e.g. for building eventual submodules)
+]
+
+[[installation.git_repos]]
+url = "METHOD_GIT_REPO_URL" # Specify the URL of the git repository to clone.
+branch = "BRANCH_TO_USE" # Specify the branch to use.
+path = "LOCAL_SAVE_NAME" # Specify the local name of the folder where the git repo will be saved, this is the name that will be used to import eventual modules from the repo in the validation and execution steps
+recursive = true # Set to true if the repository contains submodules that need to be cloned, false otherwise.
+
+[validation]
+validation_command = "VALIDATION_COMMAND" # Specify the command to run for validating the installation of the method.
+
+[execution]
+command = "EXECUTION_COMMAND" # Specify the command to run for executing the method, use {{method_vendor_dir}} to specify the path to the method folder and {{step_output_dir}} to specify the path to the output folder of the step.
+
+[execution.inputs]
+expected_input_images_folder = "input"      # Specify the expected path to the input images folder
+expected_colmap_folder = "distorted/sparse/0"       # Specify the expected path to the COLMAP output folder, this is needed to correctly link the input data to the method.
+expected_db_folder = "distorted"     # Specify the expected path to the COLMAP database folder, this is needed to correctly link the input data to the method.
+
+
+[execution.help]
+help_command = "HELP_COMMAND" # Specify the command to run for showing the help message of the method, use {{method_vendor_dir}} to specify the path to the method folder.
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: SIGNATURE       #Here will be added the security signature from the github actions 
