@@ -20,6 +20,7 @@ class PipelineRunner:
         self.pipeline_path = Path(pipeline_config_path).resolve()
         self.base_path = self.pipeline_path.parent.parent 
         self.envs_base_dir = self.base_path / ".envs"
+        self._tmp_run_dir = self.base_path / ".tmp"
         self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.verbose = verbose
         
@@ -37,30 +38,45 @@ class PipelineRunner:
         
         start_time = time.time()
         
-        steps = self.config.get("steps", [])
-        for i, step in enumerate(steps):
-            method_rel_path = step.get("method")
-            
-            method_path = (self.base_path / method_rel_path).resolve()
-            if not method_path.exists():
-                 method_path = (self.base_path / "methods" / method_rel_path).resolve()
-
-            env_path = self.envs_base_dir / method_path.stem
-            
-            manifest_path = env_path / "pixi.toml"
-            shared_meta = env_path / "shared_env.json"
-            if not manifest_path.exists() and not shared_meta.exists():
-                 self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
-                 raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
-
-            
-        for i, step in enumerate(steps):
-            self._run_step(step, i)
-            
         try:
-            self._augment_pipeline_status(start_time)
+            self._tmp_run_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.debug(f"Created temporary run directory at '{self._tmp_run_dir}'")
         except Exception as e:
-            self.logger.error(f"Error augmenting pipeline status: {e}")
+            self.logger.warning(f"Could not create temporary run directory: {e}")
+            self._tmp_run_dir = None
+        
+        try:
+            steps = self.config.get("steps", [])
+            for i, step in enumerate(steps):
+                method_rel_path = step.get("method")
+                
+                method_path = (self.base_path / method_rel_path).resolve()
+                if not method_path.exists():
+                    method_path = (self.base_path / "methods" / method_rel_path).resolve()
+
+                env_path = self.envs_base_dir / method_path.stem
+                
+                manifest_path = env_path / "pixi.toml"
+                shared_meta = env_path / "shared_env.json"
+                if not manifest_path.exists() and not shared_meta.exists():
+                    self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
+                    raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
+
+                
+            for i, step in enumerate(steps):
+                self._run_step(step, i)
+                
+            try:
+                self._augment_pipeline_status(start_time)
+            except Exception as e:
+                self.logger.error(f"Error augmenting pipeline status: {e}")
+        finally:
+            if self._tmp_run_dir and self._tmp_run_dir.exists():
+                try:
+                    shutil.rmtree(self._tmp_run_dir)
+                    self.logger.debug(f"Cleaned up temporary run directory at '{self._tmp_run_dir}'")
+                except Exception as e:
+                    self.logger.warning(f"Could not clean up temporary run directory: {e}")
 
     def _run_step(self, step_config: Dict, index: int):
         step_name = step_config.get("name", f"Step_{index}")
@@ -97,8 +113,65 @@ class PipelineRunner:
             for key, val in raw_inputs.items():
                 # Resolve ex. "{{context.input_file}}"
                 step_inputs[key] = self.context.resolve(val)
+                
+            # If a source_path points into project 'inputs/', copy it to the per-run temp dir
+            try:
+                src_key = None
+                for candidate in ("source_path", "input_path", "input_dir"):
+                    if candidate in step_inputs:
+                        src_key = candidate
+                        break
+                if src_key and self._temp_run_dir:
+                    src_val = step_inputs.get(src_key)
+                    if src_val:
+                        src_p = Path(src_val)
+                        inputs_root = (self.base_path / "inputs").resolve()
+                        # if given path is inside inputs/ or is the path string of an inputs subfolder
+                        try:
+                            p_res = src_p.resolve()
+                            inside_inputs = False
+                            if str(p_res).startswith(str(inputs_root)):
+                                inside_inputs = True
+                            else:
+                                # also consider relative paths inside project inputs
+                                try:
+                                    rel = src_p.relative_to(inputs_root)
+                                    inside_inputs = True
+                                except Exception:
+                                    inside_inputs = False
+
+                            if inside_inputs and src_p.exists():
+                                # preserve relative structure under temp dir
+                                try:
+                                    rel_path = src_p.relative_to(inputs_root)
+                                except Exception:
+                                    rel_path = Path(src_p.name)
+                                dest = (self._temp_run_dir / rel_path).resolve()
+                                if src_p.is_dir():
+                                    dest.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copytree(str(src_p), str(dest), dirs_exist_ok=True)
+                                else:
+                                    dest.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(str(src_p), str(dest))
+                                step_inputs[src_key] = str(dest)
+                                self.logger.debug(f"[TempInputs] Copied {src_p} -> {dest}")
+                        except Exception as e:
+                            self.logger.debug(f"[TempInputs] Error processing source_path: {e}")
+            except Exception as e:
+                self.logger.debug(f"[TempInputs] Error copying inputs: {e}")
+
+            # assicurati di salvare metadata input PRIMA di modifiche/autoadapt
+            src = step_inputs.get("source_path") or step_inputs.get("input_path") or None
+            try:
+                if src:
+                    src_p = Path(src)
+                    if src_p.exists():
+                        self._ensure_input_metadata(src_p)
+            except Exception:
+                pass
             
             self._adapt_input_structure(step_inputs)
+            self._validate_and_fix_resolution(self.base_path, step_inputs)
                 
             # Kwargs override
             raw_kwargs = step_config.get("kwargs", {})
@@ -272,7 +345,7 @@ class PipelineRunner:
                         self.logger.debug(f"[Auto-Adapt] Copied database to '{target_db_folder_rel}/database.db'")
                     except Exception as e:
                         self.logger.error(f"[Auto-Adapt] Error copying database: {e}")
-        self._validate_and_fix_resolution(source_path, inputs)
+        # self._validate_and_fix_resolution(source_path, inputs)
         
 
     def _get_status_file(self) -> Path:
