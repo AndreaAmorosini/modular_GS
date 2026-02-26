@@ -86,4 +86,4 @@ help_command = "python {{method_vendor_dir}}/taming-3dgs/train.py --help"
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: e85224b67d227898899b6818d5438568d58013f634b8755af785b4a5da4b8247a2c7c9848b167fe9d25e83b749d77b3f0cab9c7f3bf2792b5a87b5edae10c39a
+# MODULAR_GS_SIGNATURE: 8a33eb1d7a231125f8b5fdc15e6965c101920c97a2bbba36e5b159b5df1a67eafcafaade44dceb271dd9fd3b3225687c1b26440c21cd0bed2f0e39191e7576fe

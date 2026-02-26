@@ -87,4 +87,4 @@ help_command = "python {{method_vendor_dir}}/mip_splatting/train.py --help"
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: 0c055da65fa00d503145ebdb626f3a3510c086be61280ed21f3aa458c8733ac9f7d9f496e245cfd811172b65a529c703e126d9aba2c94a593c96d8efd408afac
+# MODULAR_GS_SIGNATURE: 8577f71d20e45c9ed558d1984d338baa868afbc4cff175e29256f1c7c4d3ac370e6e14bcddf51f314d9456524146a3135b4f21502f815da0677017ee1625f44c
