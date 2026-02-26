@@ -114,51 +114,8 @@ class PipelineRunner:
                 # Resolve ex. "{{context.input_file}}"
                 step_inputs[key] = self.context.resolve(val)
                 
-            # If a source_path points into project 'inputs/', copy it to the per-run temp dir
-            try:
-                src_key = None
-                for candidate in ("source_path", "input_path", "input_dir"):
-                    if candidate in step_inputs:
-                        src_key = candidate
-                        break
-                if src_key and self._temp_run_dir:
-                    src_val = step_inputs.get(src_key)
-                    if src_val:
-                        src_p = Path(src_val)
-                        inputs_root = (self.base_path / "inputs").resolve()
-                        # if given path is inside inputs/ or is the path string of an inputs subfolder
-                        try:
-                            p_res = src_p.resolve()
-                            inside_inputs = False
-                            if str(p_res).startswith(str(inputs_root)):
-                                inside_inputs = True
-                            else:
-                                # also consider relative paths inside project inputs
-                                try:
-                                    rel = src_p.relative_to(inputs_root)
-                                    inside_inputs = True
-                                except Exception:
-                                    inside_inputs = False
-
-                            if inside_inputs and src_p.exists():
-                                # preserve relative structure under temp dir
-                                try:
-                                    rel_path = src_p.relative_to(inputs_root)
-                                except Exception:
-                                    rel_path = Path(src_p.name)
-                                dest = (self._temp_run_dir / rel_path).resolve()
-                                if src_p.is_dir():
-                                    dest.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copytree(str(src_p), str(dest), dirs_exist_ok=True)
-                                else:
-                                    dest.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copy2(str(src_p), str(dest))
-                                step_inputs[src_key] = str(dest)
-                                self.logger.debug(f"[TempInputs] Copied {src_p} -> {dest}")
-                        except Exception as e:
-                            self.logger.debug(f"[TempInputs] Error processing source_path: {e}")
-            except Exception as e:
-                self.logger.debug(f"[TempInputs] Error copying inputs: {e}")
+            self._prepare_temp_inputs(step_inputs)
+                
 
             # assicurati di salvare metadata input PRIMA di modifiche/autoadapt
             src = step_inputs.get("source_path") or step_inputs.get("input_path") or None
@@ -555,74 +512,7 @@ class PipelineRunner:
         else:
             # fallback: if no suitable candidate, keep original_count = 0
             original_count = 0
-        
-        
-        # # Count photos used by scanning context keys for folders with images
-        # photo_count = 0
-        # for k, v in self.context.data.items():
-        #     try:
-        #         p = Path(str(v))
-        #         if p.exists() and p.is_dir():
-        #             photo_count += self._count_images_in_path(p)
-        #     except Exception:
-        #         continue
-
-        # Count photos: pick a single representative images folder (the one with the most images)
-        # photo_count = 0
-        # outputs_root = (self.base_path / "output").resolve()
-        # envs_root = self.envs_base_dir.resolve()
-
-        # def _is_ignored_dir(p: Path) -> bool:
-        #     try:
-        #         p_res = p.resolve()
-        #     except Exception:
-        #         return True
-        #     try:
-        #         if outputs_root == p_res or outputs_root in p_res.parents:
-        #             return True
-        #     except Exception:
-        #         pass
-        #     try:
-        #         if envs_root == p_res or envs_root in p_res.parents:
-        #             return True
-        #     except Exception:
-        #         pass
-        #     return False
-
-        # # Collect unique candidate directories from context (only directories)
-        # candidates = set()
-        # for k, v in self.context.data.items():
-        #     try:
-        #         p = Path(str(v))
-        #         if p.exists() and p.is_dir():
-        #             p_res = p.resolve()
-        #             if not _is_ignored_dir(p_res):
-        #                 candidates.add(p_res)
-        #     except Exception:
-        #         continue
-
-        # # Remove nested directories: keep only top-level candidates
-        # candidates_sorted = sorted(candidates, key=lambda p: len(str(p)))
-        # top_level = []
-        # for c in candidates_sorted:
-        #     if any(str(c).startswith(str(other) + os.sep) or c == other for other in top_level):
-        #         continue
-        #     top_level.append(c)
-
-        # # If there are multiple top-level candidates, pick the one with the most image files
-        # best_count = 0
-        # best_dir = None
-        # for c in top_level:
-        #     try:
-        #         cnt = self._count_images_in_path(c)
-        #         if cnt > best_count:
-        #             best_count = cnt
-        #             best_dir = c
-        #     except Exception:
-        #         continue
-
-        # photo_count = best_count
-        
+                
         # Methods used and overrides applied
         methods_used = []
         overrides_applied = {}
@@ -711,3 +601,49 @@ class PipelineRunner:
                     val_str = f"'{v}'" if isinstance(v, str) else str(v)
                     self.logger.info(f"    • {k} = {val_str}")
         self.logger.info("\n")
+        
+    def _prepare_temp_inputs(self, step_inputs: Dict[str, Any]):
+        self.logger.debug(f"Preparing temporary inputs for step: {step_inputs}")
+        image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+        if not self._tmp_run_dir:
+            return
+        
+        self.logger.debug(f"STEP INPUTS BEFORE PREPARATION: {step_inputs}")
+        
+        temp_root = self._tmp_run_dir / "inputs"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        inputs_root = (self.base_path / "inputs").resolve()
+        
+        for key in ("input_file", "source_path", "input_path", "images_dir"):
+            val = step_inputs.get(key)
+            if not val:
+                self.logger.debug(f"No value for key '{key}', skipping temp input preparation.")
+                continue
+            src_path = Path(val)
+            if not src_path.exists() or not src_path.is_dir():
+                self.logger.debug(f"Path '{src_path}' for key '{key}' does not exist or is not a directory, skipping.")
+                continue
+            is_images = False
+            for f in src_path.iterdir():
+                if f.is_file() and f.suffix.lower() in image_exts:
+                    is_images = True
+                    self.logger.debug(f"Detected image file '{f.name}' in '{src_path}', treating as image input for key '{key}'.")
+                    break
+            if not is_images:
+                self.logger.debug(f"No image files detected in '{src_path}' for key '{key}', skipping temp input preparation.")
+                continue
+            
+            rel_suffix = src_path.name
+            try:
+                rel = src_path.relative_to(inputs_root)
+                rel_suffix = rel.as_posix().replace("/", "_")
+            except Exception:
+                self.logger.debug(f"Could not relativize '{src_path}' to inputs root '{inputs_root}', using name '{rel_suffix}' as suffix for temp input key '{key}'.")
+                pass
+            
+            dest = temp_root / f"{key}_{rel_suffix}"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(src_path, dest)
+            step_inputs[key] = str(dest)
+            self.logger.debug(f"[Temp Input] Copied '{src_path}' to '{dest}' for key '{key}'")

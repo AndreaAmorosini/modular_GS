@@ -7,7 +7,6 @@ filter_opacity_threshold = 0.05
 [[steps]]
 name = "Extraction"
 method = "methods/preprocess/sharp_frames.toml"
-# Questa chiave userà il valore passato via CLI --input
 [steps.inputs]
 video = "{{context.input_file}}"
 [steps.kwargs]
@@ -18,11 +17,9 @@ num_frames = 400
 name = "StructureFromMotion"
 method = "methods/sfm/mast3r_sfm.toml"
 [steps.inputs]
-# Prende l'output dello step precedente
 images_dir = "{{context.Extraction_sharp_images}}"
 [steps.kwargs]
 scenegraph_type = "swin"
-# Definiamo la chiave con cui salvare l'output nel contesto per il prossimo step
 output_key = "sfm_ready_path"
 primary_output = "model_dir"
 

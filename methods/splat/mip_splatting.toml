@@ -18,13 +18,8 @@ shared_env = true
 channels = ["pytorch", "nvidia", "conda-forge"]
 
 
-# dependencies = [
-#     "gxx_linux-64",
-#     "gcc_linux-64",
-#     "make",
-#     "cmake",
-#     "colmap",
-# ]
+dependencies = [
+]
 
 pip_dependencies = [
     "plyfile",
@@ -37,7 +32,6 @@ pip_dependencies = [
 ]
 
 build_commands = [
-    # "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu118",
     "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
     "pip install --no-build-isolation {{method_vendor_dir}}/mip_splatting/submodules/diff-gaussian-rasterization",
     "pip install --no-build-isolation {{method_vendor_dir}}/mip_splatting/submodules/simple-knn",
@@ -50,10 +44,36 @@ path = "mip_splatting"
 recursive = true
 
 [validation]
-validation_command = "python -c 'import sys; sys.path.append(\"vendor/mip_splatting\"); print(\"1. Torch & CUDA\"); import torch; print(f\"   Torch: {torch.__version__}\"); print(f\"   CUDA Available: {torch.cuda.is_available()}\"); print(\"2. Custom Extensions\"); import diff_gaussian_rasterization; print(\"   diff_gaussian_rasterization OK\"); import simple_knn; print(\"   simple_knn OK\"); print(\"3. Repo Modules\"); import scene; import gaussian_renderer; print(\"   Scene/Renderer OK\"); print(\"VALIDATION COMPLETE\")'"
+validation_command = """
+python -c 'import sys; \
+sys.path.append(\"vendor/mip_splatting\"); \
+print(\"1. Torch & CUDA\"); \
+import torch; \
+print(f\"   Torch: {torch.__version__}\"); \
+print(f\"   CUDA Available: {torch.cuda.is_available()}\"); \
+print(\"2. Custom Extensions\"); \
+import diff_gaussian_rasterization; \
+print(\"   diff_gaussian_rasterization OK\"); \
+import simple_knn; \
+print(\"   simple_knn OK\"); \
+print(\"3. Repo Modules\"); \
+import scene; \
+import gaussian_renderer; \
+print(\"   Scene/Renderer OK\"); \
+print(\"VALIDATION COMPLETE\")'
+"""
 
 [execution]
-command = "python {{method_vendor_dir}}/mip_splatting/convert.py -s {{inputs.source_path}} --skip_matching && python {{method_vendor_dir}}/mip_splatting/train.py -s {{inputs.source_path}} --model_path {{outputs.trained_model_dir}} --iterations {{kwargs.iterations}} --data_device cpu"
+command = """
+python {{method_vendor_dir}}/mip_splatting/convert.py \
+-s {{inputs.source_path}} \
+--skip_matching && \
+python {{method_vendor_dir}}/mip_splatting/train.py \
+-s {{inputs.source_path}} \
+--model_path {{outputs.trained_model_dir}} \
+--iterations {{kwargs.iterations}} \
+--data_device cpu
+"""
 
 [execution.inputs]
 expected_input_images_folder = "input"

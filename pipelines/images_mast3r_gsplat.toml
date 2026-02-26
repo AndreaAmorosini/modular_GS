@@ -9,11 +9,9 @@ filter_opacity_threshold = 0.05
 name = "StructureFromMotion"
 method = "methods/sfm/mast3r_sfm.toml"
 [steps.inputs]
-# Prende l'output dello step precedente
 images_dir = "{{context.input_file}}"
 [steps.kwargs]
 scenegraph_type = "swin"
-# Definiamo la chiave con cui salvare l'output nel contesto per il prossimo step
 output_key = "sfm_ready_path"
 primary_output = "model_dir"
 

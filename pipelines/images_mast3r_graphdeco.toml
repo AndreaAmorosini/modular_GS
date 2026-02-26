@@ -7,11 +7,10 @@ description = "Estrae frame nitidi, calcola SfM con MASt3R e allena Gaussian Spl
 name = "StructureFromMotion"
 method = "methods/sfm/mast3r_sfm.toml"
 [steps.inputs]
-# Prende l'output dello step precedente
 images_dir = "{{context.input_file}}"
 [steps.kwargs]
 scenegraph_type = "swin"
-# Definiamo la chiave con cui salvare l'output nel contesto per il prossimo step
+#chiave con cui salvare l'output nel contesto per il prossimo step
 output_key = "sfm_ready_path"
 primary_output = "model_dir"
 
