@@ -25,4 +25,4 @@ source_path = "{{context.StructureFromMotion_model_dir}}"
 [steps.kwargs]
 iterations = 100000
 
-# MODULAR_GS_SIGNATURE: 4b6c8576fafc5d2ff114157978a45d992668d01e1a47999ba9810e801bc23743543a78bb1badb0b14c803be6102e02c46dabb277eb093ac4b51f8dacb7aff2e4
+# MODULAR_GS_SIGNATURE: 0bcc45803c9d4ffa5d79427395474a2f09a65bbeec02d1b2cb25dd06e0339ac7d4816f2bef8258281e41e3ed355d4c4a94a97270b5c454a8f70c59771ddf44e5
