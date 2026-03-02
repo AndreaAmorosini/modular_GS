@@ -46,15 +46,16 @@ recursive = true
 validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat.__version__}\"); import torch; print(f\"CUDA Available: {torch.cuda.is_available()}\")'"
 
 [execution]
-command = """python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py mcmc \
---data-dir {{inputs.source_path}} \
---result-dir {{outputs.trained_model_dir}} \
---data-factor 1 \
---disable-viewer \
---save-ply \
---max-steps {{kwargs.get('iterations', 60000)}} \
---app-opt \
---antialiased
+command = """
+python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py mcmc \
+    --data-dir {{inputs.source_path}} \
+    --result-dir {{outputs.trained_model_dir}} \
+    --data-factor 1 \
+    --disable-viewer \
+    --save-ply \
+    --max-steps {{kwargs.get('iterations', 60000)}} \
+    --app-opt \
+    --antialiased
 """
 
 [execution.inputs]

@@ -1,0 +1,93 @@
+title = "HLOC"
+description = "This is hloc, a modular toolbox for state-of-the-art 6-DoF visual localization. It implements Hierarchical Localization, leveraging image retrieval and feature matching, and is fast, accurate, and scalable. This codebase combines and makes easily accessible years of research on image matching and Structure-from-Motion."
+url = "https://github.com/cvg/Hierarchical-Localization"
+type = "sfm"
+
+[environment]
+python_version = "3.11"
+cuda = "12.1"
+PYTHONNOUSERSITE = "1"
+torch_version = "2.1.2"
+torchvision_version = "0.16.2"
+
+
+[installation]
+share_env = false
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+dependencies = [
+]
+
+pip_dependencies = [
+    "pycolmap",
+    "cython",
+]
+
+build_commands = [
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "python -m pip install -e {{method_vendor_dir}}/hloc",
+]
+
+post_install_commands = [
+]
+
+[[installation.git_repos]]
+url = "https://github.com/cvg/Hierarchical-Localization/"
+branch = "master"
+path = "hloc"
+recursive = true
+
+[validation]
+validation_command = """
+python -c "
+import sys
+sys.path.insert(0, 'vendor/mast3r')
+sys.path.insert(0, 'vendor/asmk')
+import subprocess
+
+print('=== MAST3R SFM VALIDATION ===')
+print('1. Python modules...')
+
+import numpy; print('   NumPy ' + numpy.__version__)
+import torch; print('   Torch ' + torch.__version__ + ', CUDA: ' + str(torch.cuda.is_available()))
+import faiss; print('   Faiss OK')
+import asmk; print('   ASMK OK')
+import mast3r.model; print('   Mast3r OK')
+import pycolmap; print('   PyColmap ' + pycolmap.__version__)
+
+print('2. External tools...')
+try:
+    subprocess.run(['colmap', '-h'], capture_output=True, check=True)
+    print('   COLMAP OK')
+except:
+    print('   COLMAP NOT FOUND')
+
+try:
+    subprocess.run(['glomap', '-h'], capture_output=True, check=True)
+    print('   GLOMAP OK')
+except:
+    print('   GLOMAP NOT FOUND')
+
+print('=== VALIDATION COMPLETE ===')
+"
+"""
+
+[execution]
+command = """
+bash -c '
+export PYTHONPATH=$PYTHONPATH:{{method_vendor_dir}}/mast3r:{{method_vendor_dir}}/asmk &&
+python {{method_vendor_dir}}/mast3r/mast3r_glomap_cli.py \
+--model_name MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric \
+--input_files {{inputs.images_dir}} \
+--output_dir {{outputs.model_dir}} \
+--device cuda --shared_intrinsics \
+--scenegraph_type swin --winsize 20 --win_cyclic && \
+mkdir -p {{outputs.model_dir}}/images && \
+cp -rn {{inputs.images_dir}}/* {{outputs.model_dir}}/images/
+'
+"""
+
+[execution.outputs]
+model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: fd1661a6bacb8fecdd43654ba7e38b6d5c1436a59b11680789668ab700975d9af5d1fb0c76ca9fa0a96bbfa20bf0be3dc41adc4c120609bc6464e8e911332bce

@@ -66,13 +66,13 @@ print(\"VALIDATION COMPLETE\")'
 [execution]
 command = """
 python {{method_vendor_dir}}/mip_splatting/convert.py \
--s {{inputs.source_path}} \
---skip_matching && \
+    -s {{inputs.source_path}} \
+    --skip_matching && \
 python {{method_vendor_dir}}/mip_splatting/train.py \
--s {{inputs.source_path}} \
---model_path {{outputs.trained_model_dir}} \
---iterations {{kwargs.iterations}} \
---data_device cpu
+    -s {{inputs.source_path}} \
+    --model_path {{outputs.trained_model_dir}} \
+    --iterations {{kwargs.iterations}} \
+    --data_device cpu
 """
 
 [execution.inputs]
@@ -82,7 +82,9 @@ expected_db_folder = "distorted"
 
 
 [execution.help]
-help_command = "python {{method_vendor_dir}}/mip_splatting/train.py --help"
+help_command = """
+python {{method_vendor_dir}}/mip_splatting/train.py --help
+"""
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

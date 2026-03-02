@@ -1,18 +1,19 @@
-title = "Taming 3DGS"
-description = "Pipeline di training per Taming-3DGS."
-url = "https://github.com/humansensinglab/taming-3dgs"
+title = "Faster-GS"
+description = "Exemplary integration of Faster-GS into the original reference implementation of '3D Gaussian Splatting for Real-Time Radiance Field Rendering'"
+url = "https://fhahlbohm.github.io/faster-gaussian-splatting/"
 type = "gaussian_splatting"
 
 [environment]
 python_version = "3.10"
-cuda = "11.8"
+cuda = "12.1"
 PYTHONNOUSERSITE = "1"
-torch_version = "2.7.1"
-torchvision_version = "0.22.1"
+torch_version = "2.5.1"
+torchvision_version = "0.20.1"
 
 [installation]
 shared_env = true
 channels = ["pytorch", "nvidia", "conda-forge"]
+
 
 dependencies = [
 ]
@@ -21,29 +22,27 @@ pip_dependencies = [
     "plyfile",
     "tqdm",
     "argparse",
-    "setuptools",
-    "wheel",
-    "websockets"
+    "joblib"
 ]
 
 build_commands = [
     "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
-    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/diff-gaussian-rasterization",
-    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/simple-knn",
-    "pip install --no-build-isolation {{method_vendor_dir}}/taming-3dgs/submodules/fused-ssim",
+    "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/diff-gaussian-rasterization",
+    "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/simple-knn",
+    "pip install --no-build-isolation {{method_vendor_dir}}/gaussian_splatting/submodules/fused-ssim",
+    "pip install git+https://github.com/nerficg-project/faster-gaussian-splatting/#subdirectory=FasterGSCudaBackend --no-build-isolation",
 ]
 
-
 [[installation.git_repos]]
-url = "https://github.com/humansensinglab/taming-3dgs"
+url = "https://github.com/fhahlbohm/gaussian-splatting"
 branch = "main"
-path = "taming-3dgs"
+path = "faster_gs"
 recursive = true
 
 [validation]
 validation_command = """
 python -c 'import sys; \
-sys.path.append(\"vendor/taming-3dgs\"); \
+sys.path.append(\"vendor/gaussian_splatting\"); \
 print(\"1. Torch & CUDA\"); \
 import torch; \
 print(f\"   Torch: {torch.__version__}\"); \
@@ -54,7 +53,9 @@ print(\"   diff_gaussian_rasterization OK\"); \
 import simple_knn; \
 print(\"   simple_knn OK\"); \
 import fused_ssim; \
-print(\" fused_ssim OK\"); \
+print(\"   fused_ssim OK\"); \
+import FasterGSCudaBackend; \
+print(\"   FasterGSCudaBackend OK\"); \
 print(\"3. Repo Modules\"); \
 import scene; \
 import gaussian_renderer; \
@@ -64,10 +65,10 @@ print(\"VALIDATION COMPLETE\")'
 
 [execution]
 command = """
-python {{method_vendor_dir}}/taming-3dgs/convert.py \
+python {{method_vendor_dir}}/faster_gs/convert.py \
     -s {{inputs.source_path}} \
     --skip_matching && \
-python {{method_vendor_dir}}/taming-3dgs/train.py \
+python {{method_vendor_dir}}/faster_gs/train.py \
     -s {{inputs.source_path}} \
     --model_path {{outputs.trained_model_dir}} \
     --iterations {{kwargs.iterations}} \
@@ -79,13 +80,13 @@ expected_input_images_folder = "input"
 expected_colmap_folder = "distorted/sparse/0"
 expected_db_folder = "distorted"
 
+
 [execution.help]
 help_command = """
-python {{method_vendor_dir}}/taming-3dgs/train.py --help
+python {{method_vendor_dir}}/faster_gs/train.py --help
 """
-
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: 8a33eb1d7a231125f8b5fdc15e6965c101920c97a2bbba36e5b159b5df1a67eafcafaade44dceb271dd9fd3b3225687c1b26440c21cd0bed2f0e39191e7576fe
+# MODULAR_GS_SIGNATURE: f5be83774862e593d1277a333af2855b30df9409465a210e9cbd8e7f5fb3843f7120f4c8f756ef2c73e6cbf3ab88e3a1d81319c1bf0f7501c480f2c4411f72fa

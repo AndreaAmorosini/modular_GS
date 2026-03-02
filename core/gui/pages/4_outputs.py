@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import json
 from datetime import datetime
+import shutil
 
 # Rileva project root (stesso comportamento delle altre pagine)
 current_file = Path(__file__).resolve()
@@ -103,7 +104,7 @@ else:
     else:
         st.markdown("### Runs")
         for d in dirs:
-            c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
+            c1, c2, c3, c4, c5 = st.columns([4, 1, 1, 1, 1])
             
             with c1:
                 st.markdown(f"**{d.name}**")
@@ -124,6 +125,15 @@ else:
                 disabled_gs = gs_path is None
                 if st.button("📂 Final Splat", key=f"gs_{d.name}", disabled=disabled_gs, use_container_width=True):
                     open_folder(gs_path.parent)
+                    
+            with c5:
+                if st.button("🗑️ Delete", key=f"del_{d.name}", use_container_width=True):
+                    try:
+                        shutil.rmtree(d)
+                        st.success(f"Deleted {d.name}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting {d.name}: {e}")
             
             status_file = d / "pipeline_status.json"
             if status_file.exists():

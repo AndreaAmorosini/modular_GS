@@ -13,13 +13,13 @@ class Validator:
     """Gestisce la validazione dei metodi installati tramite Pixi."""
 
     def __init__(self, methods_dir: Path, verbose: bool = False):
+        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.methods_dir = methods_dir
         self.project_root = methods_dir.parent
         self.envs_dir = self.project_root / ".envs"
         self.pixi_exe = get_or_download_pixi(self.project_root)
         self.registry = self._load_method_registry()
         self.verbose = verbose
-        self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
 
     def _load_method_registry(self) -> Dict[str, Any]:
         """
@@ -29,37 +29,73 @@ class Validator:
         registry = {}
         if not self.methods_dir.is_dir():
             raise FileNotFoundError(f"Methods Directory not found: {self.methods_dir}")
-
+        
         for toml_file in self.methods_dir.glob("**/*.toml"):
             try:
-                config = toml.load(toml_file)
-                # the ID is the name of the TOML file (without extension)
-                # This must match the name in .envs/
                 method_id = toml_file.stem
-                config["__id__"] = method_id
-                config["__path__"] = toml_file
-                
-                # Fallback for title if not present
-                if "title" not in config:
-                    config["title"] = method_id
-                    
-                # exec_section = config.get("execution", {})
-                # has_help = isinstance(exec_section, dict) and isinstance(exec_section.get("help"), dict)
-                # config["has_help"] = bool(has_help)
-
-                registry[method_id] = config
+                metadata = self._extract_metadata(toml_file)
+                metadata.setdefault("title", method_id)
+                registry[method_id] = {
+                    "__id__": method_id,
+                    "__path__": toml_file,
+                    "__metadata__": metadata,
+                    "__config__": None
+                }
             except Exception as e:
                 self.logger.error(f"Failed to load: {toml_file}: {e}")
         return registry
-
+    
+    def _extract_metadata(self, toml_file: Path) -> Dict[str, Any]:
+        metadata: Dict[str, Any] = {}
+        metadata_section = False
+        keys_of_interest = {"title", "description", "url", "type"}
+        
+        try:
+            with open(toml_file, "r", encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.split("#", 1)[0].strip()
+                    if not line:
+                        continue
+                    if line.startswith("["):
+                        section = line.strip("[]").lower()
+                        metadata_section = section == "metadata"
+                        if not metadata_section and metadata:
+                            break
+                        continue
+                    if "=" not in line:
+                        continue
+                    key, value = [part.strip() for part in line.split("=", 1)]
+                    if metadata_section or key in keys_of_interest:
+                        value = value.split("#", 1)[0].strip()
+                        if not value:
+                            continue
+                        try:
+                            parsed = toml.loads(value)
+                        except Exception:
+                            parsed = value.strip('"').strip("'")
+                        metadata[key] = parsed
+        except Exception as e:
+            self.logger.error(f"Error extracting metadata from {toml_file}: {e}")
+            pass
+        return metadata
+    
     def find_method_config(self, method_id: str) -> Optional[Dict[str, Any]]:
-        return self.registry.get(method_id)
+        entry = self.registry.get(method_id)
+        if not entry:
+            return None
+        if entry["__config__"] is None:
+            config = toml.load(entry["__path__"])
+            config["__id__"] = method_id
+            config["__path__"] = entry["__path__"]
+            entry["__config__"] = config
+            entry["__metadata__"].setdefault("title", config.get("title", method_id))
+        return entry["__config__"]
 
     def validate_method(self, method_id: str, all: bool) -> bool:
         """
         Execute the validation command specified in the TOML using 'pixi run'.
         """
-        config = self.registry.get(method_id)
+        config = self.find_method_config(method_id)
         if not config:
             self.logger.warning(f"Method '{method_id}' not found.")
             return False

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tomli as tomllib
 import os
+from functools import lru_cache
 
 st.set_page_config(
     page_title="Modular Gaussian Splatting - Manage Methods",
@@ -13,11 +14,9 @@ st.set_page_config(
 )
 
 current_file = Path(__file__).resolve()
-# Risaliamo le directory finché non troviamo la cartella 'methods'
 project_root = current_file.parent
 while not (project_root / "methods").exists():
     if project_root == project_root.parent:
-        # Fallback di sicurezza
         project_root = current_file.parents[3]
         break
     project_root = project_root.parent
@@ -34,9 +33,9 @@ except ImportError as e:
     st.error(f"Error importing core modules: {e}")
     st.stop()
     
+def load_validator(methods_dir: Path):
+    return Validator(methods_dir=methods_dir, verbose=True)
 
-
-# render_sidebar(project_root)
 
 st.title("📦 Manage Methods")
 
@@ -52,7 +51,8 @@ if not methods_dir.exists():
     st.stop()
     
 try:
-    validator = Validator(methods_dir=methods_dir, verbose=True)
+    # validator = Validator(methods_dir=methods_dir, verbose=True)
+    validator = load_validator(methods_dir)
     registry = validator.registry
 except Exception as e:
     st.error(f"Failed Initialization of Validator: {e}")
@@ -92,9 +92,6 @@ for method_id , cfg in registry.items():
         
 if envs_dir.exists():
     total_bytes = _get_dir_size_bytes(envs_dir)
-    # for child in envs_dir.iterdir():
-    #     if child.is_dir():
-    #         total_bytes += _get_dir_size_bytes(child)
             
 def _readable(n: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -125,6 +122,9 @@ for category in sorted(categories.keys()):
         for method_id, config in categories[category]:
             env_path = envs_dir / method_id
             toml_path = config.get("__path__")
+            
+            metadata = config.get("__metadata__", {})
+            print(f"Loaded method {method_id} from {toml_path} with metadata: {metadata}")
 
             # Check if installed
             is_installed = (env_path / ".install_complete").exists()
@@ -138,9 +138,9 @@ for category in sorted(categories.keys()):
                 c1, c2, c3 = st.columns([3, 2, 4])
 
                 with c1:
-                    st.markdown(f"**{config.get('title', method_id)}**")
-                    st.markdown(f"{config.get('description', 'No description')}")
-                    st.markdown(f'<a href="{config.get("url", "")}" target="_blank" rel="noopener noreferrer">{config.get("url", "")}</a>', unsafe_allow_html=True)
+                    st.markdown(f"**{metadata.get('title', method_id)}**")
+                    st.markdown(f"{metadata.get('description', 'No description')}")
+                    st.markdown(f'<a href="{metadata.get("url", "")}" target="_blank" rel="noopener noreferrer">{config.get("url", "")}</a>', unsafe_allow_html=True)
 
                 with c2:
                     if is_installed:

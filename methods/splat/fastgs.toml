@@ -69,21 +69,21 @@ print(\"VALIDATION COMPLETE\")'
 command = """
 python {{method_vendor_dir}}/fastgs/convert.py -s {{inputs.source_path}} --skip_matching &&
 python {{method_vendor_dir}}/fastgs/train.py \
--s {{inputs.source_path}} \
---model_path {{outputs.trained_model_dir}} \
---iterations {{kwargs.iterations}} \
---densify_grad_threshold {{kwargs.densify_grad_threshold}} \
---grad_abs_thresh {{kwargs.grad_abs_thresh}} \
---grad_thresh {{kwargs.grad_thresh}} \
---opacity_reset_interval {{kwargs.opacity_reset_interval}} \
---lambda_dssim {{kwargs.lambda_dsssim}} \
---dense {{kwargs.dense}} \
---position_lr_final {{kwargs.position_lr_final}} \
---shfeature_lr {{kwargs.shfeature_lr}} \
---feature_lr {{kwargs.feature_lr}} \
---loss_thresh {{kwargs.loss_thresh}} \
---data_device cpu \
---random_background \
+    -s {{inputs.source_path}} \
+    --model_path {{outputs.trained_model_dir}} \
+    --iterations {{kwargs.iterations}} \
+    --densify_grad_threshold {{kwargs.densify_grad_threshold}} \
+    --grad_abs_thresh {{kwargs.grad_abs_thresh}} \
+    --grad_thresh {{kwargs.grad_thresh}} \
+    --opacity_reset_interval {{kwargs.opacity_reset_interval}} \
+    --lambda_dssim {{kwargs.lambda_dsssim}} \
+    --dense {{kwargs.dense}} \
+    --position_lr_final {{kwargs.position_lr_final}} \
+    --shfeature_lr {{kwargs.shfeature_lr}} \
+    --feature_lr {{kwargs.feature_lr}} \
+    --loss_thresh {{kwargs.loss_thresh}} \
+    --data_device cpu \
+    --random_background \
 """
 
 [execution.inputs]
@@ -92,7 +92,9 @@ expected_colmap_folder = "distorted/sparse/0"
 expected_db_folder = "distorted"
 
 [execution.help]
-help_command = "python {{method_vendor_dir}}/fastgs/train.py --help"
+help_command = """
+python {{method_vendor_dir}}/fastgs/train.py --help
+"""
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"

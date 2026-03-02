@@ -81,23 +81,6 @@ def get_or_download_pixi(base_dir: Path) -> Path:
         raise RuntimeError(f"Errore download Pixi: {e}")
 
     return pixi_exe.resolve()
-
-
-#Formatter for logging
-# class _ColorFormatter(logging.Formatter):
-#     COLORS = {
-#         logging.DEBUG: "\033[36m",  # ciano
-#         logging.INFO: "\033[32m",  # verde
-#         logging.WARNING: "\033[33m",  # giallo
-#         logging.ERROR: "\033[31m",  # rosso
-#         logging.CRITICAL: "\033[35m",  # magenta
-#     }
-#     RESET = "\033[0m"
-    
-#     def format(self, record: logging.LogRecord) -> str:
-#         msg = super().format(record)
-#         color = self.COLORS.get(record.levelno, self.RESET)
-#         return f"{color}{msg}{self.RESET}" if color else msg
     
     
 def setup_logging(

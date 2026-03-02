@@ -38,19 +38,21 @@ LOG_ALLOWLIST = [
 
 def _find_manifest(method_name: str) -> Path:
     """Helper to find the .toml file."""
-    candidates = list(METHODS_DIR.rglob(f"{method_name}.toml"))
-    if not candidates:
-        possible_path = METHODS_DIR / f"{method_name}.toml"
-        if possible_path.exists():
-            candidates = [possible_path]
+    candidates = [
+        (METHODS_DIR / "preprocess" / (method_name + ".toml")),
+        (METHODS_DIR / "sfm" / (method_name + ".toml")),
+        (METHODS_DIR / "splat" / (method_name + ".toml")),
+        (METHODS_DIR / "postproces" / (method_name + ".toml")),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
 
-    if not candidates:
-        typer.secho(
-            f"Metodo '{method_name}' non trovato in {METHODS_DIR}", fg=typer.colors.RED
-        )
-        raise typer.Abort()
+    typer.secho(
+        f"Metodo '{method_name}' non trovato in {METHODS_DIR}", fg=typer.colors.RED
+    )
+    raise typer.Abort()
 
-    return candidates[0]
 
 # Helper method to remove shared entries from shared pixi.toml
 def _remove_shared_entries(method_id: str):
@@ -233,7 +235,6 @@ def install_method(
     verify_file_interactive(method_path, verbose=verbose)
 
     try:
-        # typer.echo(f"Loading configuration from {method_path}...")
         logger.info(f"Loading configuration from {method_path}...")
 
         with open(method_path, "rb") as f:
@@ -242,14 +243,14 @@ def install_method(
         # Definiamo il percorso dell'ambiente
         # Usiamo il titolo del metodo o il nome del file per la cartella env
         safe_name = (
-            method_config.get("title", method_path.stem).replace(" ", "_").lower()
+            method_config.get("title", method_path.stem).replace(" ", "_").replace("-", "_").lower()
         )
         env_path = ENVS_DIR / safe_name
 
         logger.info(f"Installing tool env in: {env_path}")
 
         #Inizializziamo il nuovo Installer Pixi
-        # Nota: Passiamo il dict di config e la root del progetto
+        #Passiamo il dict di config e la root del progetto
         installer = MethodInstaller(method_config, PROJECT_ROOT, verbose=verbose)
 
         installer.install(env_path)
@@ -307,7 +308,7 @@ def uninstall_method(
             with open(method_path, "rb") as f:
                 cfg = tomli.load(f)
             method_id = method_path.stem
-            env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
+            env_name = cfg.get("title", method_path.stem).replace(" ", "_").replace("-", "_").lower()
             env_path = ENVS_DIR / env_name
             
             vendor_dirs = []
@@ -415,14 +416,15 @@ def list_methods():
     typer.secho(f"\n{'METHOD':<25} {'STATE':<12} {'DESCRIPTION'}", bold=True, underline=True)
 
     for method_id, config in sorted(registry.items()):
-        safe_name = config.get("title", method_id).replace(" ", "_").lower()
+        metadata = config.get("__metadata__", {})
+        safe_name = metadata.get("title", method_id).replace(" ", "_").lower()
         env_path = ENVS_DIR / safe_name
         is_installed = (env_path / ".install_complete").exists()
         
         status_str = "INSTALLED" if is_installed else "NOT INSTALLED"
         status_color = typer.colors.GREEN if is_installed else typer.colors.RED
         
-        desc = config.get("description", "N/A")
+        desc = metadata.get("description", "N/A")
         if len(desc) > 60:
             desc = desc[:57] + "..."
             
@@ -434,7 +436,7 @@ def list_methods():
         if is_installed:
             meta_info.append(f"Path: ./.envs/{safe_name}")
         if "url" in config:
-            meta_info.append(f"URL: {config['url']}")
+            meta_info.append(f"URL: {metadata['url']}")
             
         if meta_info:
             typer.secho(f"   └── {', '.join(meta_info)}", fg=typer.colors.BRIGHT_BLACK)
@@ -456,7 +458,7 @@ def list_arguments(
         method_path = _find_manifest(method_name)
         with open(method_path, "rb") as f:
             cfg = tomli.load(f)
-        env_name = cfg.get("title", method_path.stem).replace(" ", "_").lower()
+        env_name = cfg.get("title", method_path.stem).replace(" ", "_").replace("-", "_").lower()
         env_path = ENVS_DIR / env_name
         
         manifest_path = env_path / "pixi.toml"

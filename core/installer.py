@@ -1,5 +1,6 @@
 import os
 import subprocess
+from time import sleep
 import tomli_w
 import shlex
 import shutil
@@ -52,7 +53,11 @@ class MethodInstaller:
 
                 with self.logger.spinner(" Running Pixi Install "):
                     subprocess.check_call(
-                        [str(self.pixi_exe), "install"], cwd=env_path, env=os.environ, stdout=None if self.verbose else subprocess.DEVNULL, stderr=None if self.verbose else subprocess.DEVNULL
+                        [str(self.pixi_exe), "install"],
+                        cwd=env_path,
+                        env=os.environ,
+                        stdout=None if self.verbose else subprocess.DEVNULL,
+                        stderr=None if self.verbose else subprocess.DEVNULL
                     )
             
             self._clone_repositories()
@@ -127,7 +132,7 @@ class MethodInstaller:
 
         with open(manifest_path, "wb") as f:
             tomli_w.dump(pixi, f)
-
+            
         subprocess.check_call(
             [
                 str(self.pixi_exe),
@@ -153,23 +158,25 @@ class MethodInstaller:
         if manifest_path.exists():
             with open(manifest_path, "rb") as f:
                 return tomli.load(f)
-
-        return {
-            "project": {
-                "name": "gs_shared",
-                "version": "0.1.0",
-                "channels": self.config.get("installation", {}).get(
-                    "channels", ["pytorch", "nvidia", "conda-forge"]
-                ),
-                "platforms": ["linux-64"],
-            },
-            "dependencies": {"python": "3.10.*", "pip": "*"},
-            "pypi-dependencies": {},
-            "pypi-options": {},
-            "feature": {},
-            "environments": {},
-            "system-requirements": {"linux": "5.4"},
-        }
+        else:
+            pixi = {
+                "project": {
+                    "name": "gs_shared",
+                    "version": "0.1.0",
+                    "channels": self.config.get("installation", {}).get(
+                        "channels", ["pytorch", "nvidia", "conda-forge"]
+                    ),
+                    "platforms": ["linux-64"],
+                },
+                "dependencies": {"python": "3.10.*", "pip": "*"},
+                "pypi-dependencies": {},
+                "pypi-options": {},
+                "feature": {},
+                "environments": {},
+                "system-requirements": {"linux": "5.4"},
+            }
+            self._ensure_index_strategy(pixi)
+            return pixi
 
     def _upsert_shared_base_feature(self, pixi: Dict):
         env_cfg = self.config.get("environment", {})
@@ -181,6 +188,7 @@ class MethodInstaller:
         base_feature = f"base-cu{cuda_ver}"
         if torch_ver:
             base_feature += f"-torch{torch_ver.replace('.', '-')}"
+            self._ensure_index_strategy(pixi)
 
         base_deps = {
             "gxx_linux-64": "11.*",
@@ -280,10 +288,6 @@ class MethodInstaller:
             "pypi-dependencies": {},
             "system-requirements": {"linux": "5.4"},
         }
-
-        # Dipendenze Conda
-        has_pytorch_cuda = False
-        has_cuda_toolkit = False
         
         #Check on type to inject necessaries libraries for building or other
         #Check if build command is not empty
@@ -652,3 +656,8 @@ class MethodInstaller:
         if v and any(op in v for op in ["<", ">", "~", "!", "*"]):
             return v    
         return (f"=={v}" if p else f"{v}.*") if v and v != "*" and "<" not in v else v
+    
+    def _ensure_index_strategy(self, pixi: Dict):
+        opts = pixi.setdefault("pypi-options", {})
+        if opts.get("index-strategy") != "unsafe-best-match":
+            opts["index-strategy"] = "unsafe-best-match"

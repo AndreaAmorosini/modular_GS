@@ -243,6 +243,22 @@ if selected_name and selected_name != "-- select --":
         
         resolved_output = Path(output_name) if Path(output_name).is_absolute() else (project_root / output_name)
         out_status = get_output_status(resolved_output, project_root)
+        has_prev_run = out_status["exists"] and not out_status["empty"]
+        
+        if has_prev_run:
+            mode_labels = {
+                "restart": "Restart (overwrite existing output)",
+                "resume": "Resume (keep existing output and skip completed steps)",
+            }
+            st.radio(
+                "Output path already exists. Choose how to proceed:",
+                options = list(mode_labels.keys()),
+                format_func = lambda x: mode_labels[x],
+                index = 0,
+                key = f"run_action_{selected_name}"
+            )
+        else:
+            st.session_state.pop(f"run_action_{selected_name}", None)
         
         if not out_status["exists"]:
             st.info(f"Output path `{output_name}` does not exist. It will be created by the pipeline.")
@@ -373,8 +389,14 @@ if selected_name and selected_name != "-- select --":
                 cmd += ["--gui"]
                 cmd += ["--verbose"]
                 
-                if out_status.get("exists") and not out_status.get("empty"):
+                # if out_status.get("exists") and not out_status.get("empty"):
+                #     cmd += ["--restart"]
+                
+                run_action = st.session_state.get(f"run_action_{selected_name}", None)
+                if run_action == "restart":
                     cmd += ["--restart"]
+                elif run_action == "resume":
+                    pass
 
                 try:
                     proc = subprocess.Popen(cmd, cwd=str(project_root), start_new_session=True)
