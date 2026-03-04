@@ -28,6 +28,7 @@ class MethodInstaller:
 
     def install(self, env_path: Path):
         self.logger.info(f"Starting installation for method: {self.config.get('title', 'unknown')}")
+        print(f"Type: {self.config.get('type', 'N/A')}")
         env_path.mkdir(parents=True, exist_ok=True)
 
         sentinel_file = env_path / ".install_complete"

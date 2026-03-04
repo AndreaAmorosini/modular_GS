@@ -97,6 +97,8 @@ def setup_logging(
     root.handlers.clear()
     root.setLevel(effective_level)
     
+    logging.getLogger("watchdog").disabled = True
+    
     logging.getLogger("PIL").setLevel(logging.WARNING)
     
     return RichLogger(
@@ -105,7 +107,6 @@ def setup_logging(
         debug_enabled=verbose,
         min_level=effective_level
     )
-        
     
 class RichLogger:
     ## Rich Logger for better console output

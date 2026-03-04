@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 pip_dependencies = [
+    "numpy<2.0.0",
     "plyfile",
     "tqdm",
     "argparse",

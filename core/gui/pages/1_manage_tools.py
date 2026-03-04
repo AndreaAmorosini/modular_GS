@@ -124,7 +124,6 @@ for category in sorted(categories.keys()):
             toml_path = config.get("__path__")
             
             metadata = config.get("__metadata__", {})
-            print(f"Loaded method {method_id} from {toml_path} with metadata: {metadata}")
 
             # Check if installed
             is_installed = (env_path / ".install_complete").exists()
@@ -211,8 +210,11 @@ for category in sorted(categories.keys()):
                         if proceed_install:
                             with st.spinner(f"Installing {method_id}..."):
                                 try:
+                                    method_config_path = config.get("__path__")
+                                    with open(method_config_path, "rb") as f:
+                                        method_config = tomllib.load(f)
                                     installer = MethodInstaller(
-                                        method_config=config,
+                                        method_config=method_config,
                                         base_path=project_root,
                                         verbose=True,
                                     )
