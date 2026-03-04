@@ -99,4 +99,4 @@ python {{method_vendor_dir}}/fastgs/train.py --help
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: a6d429fee761dee4ee8e770b8f97669398041b3ad042656fe2f855863616f46ad22689aec7cab8b34938a8a91b0b3a0b5b9a4043dca1882fe455db0b10eec944
+# MODULAR_GS_SIGNATURE: f8427f938f6e35d3808f1ad5e255e48bf5a32ebda2f18141b3447e6d70b5c0c9c9deeb3d84b3b2329b2496dca8c64d9d2d7bb19b27649e13e790de8cb384eb3e

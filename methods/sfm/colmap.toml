@@ -38,4 +38,4 @@ build_commands = [
 [validation]
 validation_command = "colmap help"
 
-# MODULAR_GS_SIGNATURE: 593032ab23dbbd01de8b1944c7222ebc8dee8da48cc6576396c0412b7d91bec99cdf3fb9b6ba92e8ca9bb300d11fcc4b82c01a0eaadddd89e76eafc615655ca1
+# MODULAR_GS_SIGNATURE: bebd43bd74dd37fdadf757a9b1286537d96ee2cd24365aef3134384bc9b0d98da10f425fc1bed5fe389bbdf8e2ffa1fc24d1ed3baa2a29e2a29786b03b7658d1
