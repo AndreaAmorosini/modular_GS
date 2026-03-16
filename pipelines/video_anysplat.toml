@@ -1,0 +1,18 @@
+title = "Video to Gaussian Splatting (AnySplat)"
+description = "Estrae frame nitidi da un video e produce Gaussian Splats con AnySplat (feed-forward, senza SfM)."
+
+[[steps]]
+name = "Extraction"
+method = "methods/preprocess/sharp_frames.toml"
+[steps.inputs]
+video = "{{context.input_file}}"
+[steps.kwargs]
+num_frames = 50
+
+[[steps]]
+name = "Reconstruction"
+method = "methods/splat/anysplat.toml"
+[steps.inputs]
+images_dir = "{{context.Extraction_sharp_images}}"
+[steps.kwargs]
+max_images = 0

@@ -190,13 +190,21 @@ class MethodInstaller:
         if torch_ver:
             base_feature += f"-torch{torch_ver.replace('.', '-')}"
             self._ensure_index_strategy(pixi)
+            
+        C_COMPILER_VERSION = None
+        if int(cuda_ver) < 120:
+            C_COMPILER_VERSION = "11"
+        elif int(cuda_ver) >= 120:
+            C_COMPILER_VERSION = "12"
+
 
         base_deps = {
-            "gxx_linux-64": "11.*",
-            "gcc_linux-64": "11.*",
+            "gxx_linux-64": f"{C_COMPILER_VERSION}.*",
+            "gcc_linux-64": f"{C_COMPILER_VERSION}.*",
             "make": "*",
             "cmake": "*",
             "cuda-toolkit": f"{cuda_ver_raw}",
+            "cuda-toolkit-dev": f"{cuda_ver_raw}",
             "cuda-command-line-tools": f"{cuda_ver_raw}.*",
             "cuda-libraries": f"{cuda_ver_raw}.*",
             "cuda-cudart": f"{cuda_ver_raw}.*",
@@ -419,6 +427,9 @@ class MethodInstaller:
             lib_dir = pixi_env_prefix / "lib"
             include_dir = pixi_env_prefix / "include"
             
+            targets_include_dir = pixi_env_prefix / "targets" / "x86_64-linux" / "include"
+            targets_lib_dir = pixi_env_prefix / "targets" / "x86_64-linux" / "lib"
+            
             cc_path = bin_dir / "x86_64-conda-linux-gnu-gcc"
             cxx_path = bin_dir / "x86_64-conda-linux-gnu-g++"
             
@@ -427,14 +438,19 @@ class MethodInstaller:
                 custom_env["CXX"] = str(cxx_path)
                 custom_env["CMAKE_C_COMPILER"] = str(cc_path)
                 custom_env["CMAKE_CXX_COMPILER"] = str(cxx_path)
+                
+            all_includes = f"{include_dir}:{targets_include_dir}"
             
-            custom_env["CPATH"] = f"{include_dir}:{custom_env.get('CPATH', '')}"
-            custom_env["C_INCLUDE_PATH"] = f"{include_dir}:{custom_env.get('C_INCLUDE_PATH', '')}"
-            custom_env["CPLUS_INCLUDE_PATH"] = f"{include_dir}:{custom_env.get('CPLUS_INCLUDE_PATH', '')}"
+            custom_env["CPATH"] = f"{all_includes}:{custom_env.get('CPATH', '')}"
+            custom_env["C_INCLUDE_PATH"] = f"{all_includes}:{custom_env.get('C_INCLUDE_PATH', '')}"
+            custom_env["CPLUS_INCLUDE_PATH"] = f"{all_includes}:{custom_env.get('CPLUS_INCLUDE_PATH', '')}"
             
-            custom_env["NVCC_PREPEND_FLAGS"] = "-allow-unsupported-compiler"
+            custom_env["NVCC_PREPEND_FLAGS"] = f"-allow-unsupported-compiler -I{include_dir} -I{targets_include_dir}"
             
-            custom_env["LD_LIBRARY_PATH"] = f"{lib_dir}:{custom_env.get('LD_LIBRARY_PATH', '')}"
+            custom_env["CFLAGS"] = f"-I{include_dir} -I{targets_include_dir} {custom_env.get('CFLAGS', '')}"
+            custom_env["CXXFLAGS"] = f"-I{include_dir} -I{targets_include_dir} {custom_env.get('CXXFLAGS', '')}"
+            
+            custom_env["LD_LIBRARY_PATH"] = f"{lib_dir}:{targets_lib_dir}:{custom_env.get('LD_LIBRARY_PATH', '')}"
             custom_env["PATH"] = f"{bin_dir}:{custom_env.get('PATH', '')}"            
         else:
             # Fallback
@@ -488,26 +504,26 @@ class MethodInstaller:
             except Exception as e:
                 self.logger.error(f"Error during shared environment cleanup: {e}")
                 
-            repos = self.config.get("installation", {}).get("git_repos", [])
-            for repo in repos:
-                url = repo.get("url")
-                path_name = repo.get("path", url.split("/")[-1].replace(".git", ""))
-                
-                if path_name:
-                    vendor_path = self.vendor_dir / path_name
-                    if vendor_path.exists():
-                        self.logger.info(f"Removing vendor directory: {vendor_path}")
-                        try:
-                            shutil.rmtree(vendor_path)
-                        except Exception as e:
-                            self.logger.error(f"Error removing vendor directory {vendor_path}: {e}")
-                            
-            if env_path.exists():
-                self.logger.info(f"Removing environment directory: {env_path}")
-                try:
-                    shutil.rmtree(env_path)
-                except Exception as e:
-                    self.logger.error(f"Error removing environment directory {env_path}: {e}")
+        repos = self.config.get("installation", {}).get("git_repos", [])
+        for repo in repos:
+            url = repo.get("url")
+            path_name = repo.get("path", url.split("/")[-1].replace(".git", ""))
+            
+            if path_name:
+                vendor_path = self.vendor_dir / path_name
+                if vendor_path.exists():
+                    self.logger.info(f"Removing vendor directory: {vendor_path}")
+                    try:
+                        shutil.rmtree(vendor_path)
+                    except Exception as e:
+                        self.logger.error(f"Error removing vendor directory {vendor_path}: {e}")
+                        
+        if env_path.exists():
+            self.logger.info(f"Removing environment directory: {env_path}")
+            try:
+                shutil.rmtree(env_path)
+            except Exception as e:
+                self.logger.error(f"Error removing environment directory {env_path}: {e}")
                     
     def _remove_shared_entries(self, method_id: str):
         shared_dir = self.base_path / ".envs" / "_shared"

@@ -1,0 +1,142 @@
+title = "AnySplat"
+description = "Feed-forward 3D Gaussian Splatting from Unconstrained Views"
+url = "https://github.com/InternRobotics/AnySplat"
+type = "gaussian_splatting"
+
+[environment]
+python_version = "3.10"
+cuda = "12.1"
+PYTHONNOUSERSITE = "1"
+torch_version = "2.2.0"
+torchvision_version = "0.17.0"
+
+[installation]
+shared_env = false
+channels = ["pytorch", "nvidia", "conda-forge", "pytorch3d"]
+
+
+dependencies = [
+    "pytorch3d=0.7.2",
+]
+
+pip_dependencies = [
+]
+
+build_commands = [
+    "pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121",
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "pip install --no-build-isolation -r {{method_vendor_dir}}/anysplat/requirements.txt",
+    "pip uninstall -y torch-scatter",
+    "pip install --no-deps --force-reinstall torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cu121.html",
+    # "bash -c 'cd {{method_vendor_dir}}/anysplat/src/model/encoder/backbone/croco/curope && python setup.py build_ext --inplace'",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/InternRobotics/AnySplat"
+branch = "main"
+path = "anysplat"
+recursive = true
+
+[validation]
+validation_command = """
+python -c "
+import sys
+sys.path.insert(0, 'vendor/anysplat')
+print('=== ANYSPLAT VALIDATION ===')
+print('1. Python modules...')
+
+import numpy; print('   NumPy ' + numpy.__version__)
+import torch; print('   Torch ' + torch.__version__ + ', CUDA: ' + str(torch.cuda.is_available()))
+import einops; print('   Einops OK')
+import huggingface_hub; print('   HuggingFace Hub OK')
+import gsplat; print('   GSplat OK')
+import plyfile; print('   Plyfile OK')
+import pytorch3d; print('   PyTorch3D OK')
+
+print('2. AnySplat model import...')
+from src.model.model.anysplat import AnySplat; print('   AnySplat Model OK')
+from src.model.ply_export import export_ply; print('   PLY Export OK')
+from src.utils.image import process_image; print('   Image Processing OK')
+
+print('=== VALIDATION COMPLETE ===')
+"
+"""
+
+[execution]
+command = """
+python - <<'PYCODE'
+import os, sys, torch
+from pathlib import Path
+sys.path.insert(0, "{{method_vendor_dir}}/anysplat")
+
+from src.model.model.anysplat import AnySplat
+from src.model.ply_export import export_ply
+from src.utils.image import process_image
+
+# Load model from HuggingFace
+model = AnySplat.from_pretrained("lhjiang/anysplat")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+model.eval()
+for param in model.parameters():
+    param.requires_grad = False
+
+# Load images from input directory
+image_folder = "{{inputs.images_dir}}"
+image_names = sorted([
+    os.path.join(image_folder, f)
+    for f in os.listdir(image_folder)
+    if f.lower().endswith((".png", ".jpg", ".jpeg"))
+])
+
+# Limit number of images if specified
+max_images = int("{{kwargs.max_images}}")
+if max_images > 0 and len(image_names) > max_images:
+    import numpy as np
+    indices = np.linspace(0, len(image_names) - 1, max_images, dtype=int)
+    image_names = [image_names[i] for i in indices]
+
+print(f"Processing {len(image_names)} images...")
+images = [process_image(img_path) for img_path in image_names]
+images = torch.stack(images, dim=0).unsqueeze(0).to(device)
+b, v, _, h, w = images.shape
+
+# Run inference
+print("Running AnySplat inference...")
+gaussians, pred_context_pose = model.inference((images + 1) * 0.5)
+
+# Export PLY
+output_dir = Path("{{outputs.trained_model_dir}}")
+ply_dir = output_dir / "point_cloud" / "iteration_1"
+ply_dir.mkdir(parents=True, exist_ok=True)
+ply_path = ply_dir / "point_cloud.ply"
+
+export_ply(
+    gaussians.means[0],
+    gaussians.scales[0],
+    gaussians.rotations[0],
+    gaussians.harmonics[0],
+    gaussians.opacities[0],
+    ply_path,
+)
+print(f"PLY exported to {ply_path}")
+print(f"Total Gaussians: {gaussians.means[0].shape[0]}")
+PYCODE
+"""
+
+
+[execution.inputs]
+# expected_input_images_folder = "input"
+# expected_colmap_folder = "distorted/sparse/0"
+# expected_db_folder = "distorted"
+
+
+[execution.help]
+help_command = """
+python {{method_vendor_dir}}/anysplat/inference.py --help
+"""
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: 6237d6ed93cade3e4e832ab9b7d74ea332e586a2ab058f72d3d4a1b3a6174d895455cb7a71132f30b3ab675eb7513b9be50d641a5c1cf9020fabc00f42ab261a

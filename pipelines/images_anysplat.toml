@@ -1,0 +1,10 @@
+title = "Images to Gaussian Splatting (AnySplat)"
+description = "Feed-forward 3D Gaussian Splatting direttamente da immagini, senza SfM né training iterativo."
+
+[[steps]]
+name = "Reconstruction"
+method = "methods/splat/anysplat.toml"
+[steps.inputs]
+images_dir = "{{context.input_file}}"
+[steps.kwargs]
+max_images = 0
