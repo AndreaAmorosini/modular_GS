@@ -139,4 +139,4 @@ python {{method_vendor_dir}}/anysplat/inference.py --help
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: 6237d6ed93cade3e4e832ab9b7d74ea332e586a2ab058f72d3d4a1b3a6174d895455cb7a71132f30b3ab675eb7513b9be50d641a5c1cf9020fabc00f42ab261a
+# MODULAR_GS_SIGNATURE: a382106d23b4ba51c173c0934ceac2c149dfdf046abaa5baeda5c2c6e64fe192f1c78b3bbed6d4c03c6e2233b123951dc13ac466028652c29ffdc89f4a205aed

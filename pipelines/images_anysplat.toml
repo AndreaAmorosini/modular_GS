@@ -8,3 +8,5 @@ method = "methods/splat/anysplat.toml"
 images_dir = "{{context.input_file}}"
 [steps.kwargs]
 max_images = 0
+
+# MODULAR_GS_SIGNATURE: 62b61c108b492685e3461042f5d607a700c62f5ba9e9a9ee9354d0a9c8485fddbf8482176cda64d82cfaf1d82a857fc27da63c34580f4b845c02f5984b4b3d8f

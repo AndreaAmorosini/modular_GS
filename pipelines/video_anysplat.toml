@@ -16,3 +16,5 @@ method = "methods/splat/anysplat.toml"
 images_dir = "{{context.Extraction_sharp_images}}"
 [steps.kwargs]
 max_images = 0
+
+# MODULAR_GS_SIGNATURE: f0cb97876371d76b8f1979907e7022761bdb4e427fbdfc7ad19665f6371dc87c52443b8a5154c6fb1091b9115049685a6b47c16f2f73bdb96acb49f65fb0b89e

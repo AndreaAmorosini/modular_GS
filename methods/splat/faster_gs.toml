@@ -89,4 +89,4 @@ python {{method_vendor_dir}}/faster_gs/train.py --help
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: 157f6cc6e236a0e6fd1dd6cd5d9423bcfbc9f4a4e1152dcc343ad08391a4ad18c74f18e5253038c3e8bda9815542f57b6afc05c10e56af7956b31ec9b0f0b5f6
+# MODULAR_GS_SIGNATURE: aefa7b27f165d1a4c37d376948b747e46597adab1c10151ea91631e236828aecabbfd8a2cd245f87942c60032c077b7a24566f6942c0ae2306827e0211627d46
