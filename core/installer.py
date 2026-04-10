@@ -204,7 +204,7 @@ class MethodInstaller:
             "make": "*",
             "cmake": "*",
             "cuda-toolkit": f"{cuda_ver_raw}",
-            "cuda-toolkit-dev": f"{cuda_ver_raw}",
+            # "cuda-toolkit-dev": f"{cuda_ver_raw}",
             "cuda-command-line-tools": f"{cuda_ver_raw}.*",
             "cuda-libraries": f"{cuda_ver_raw}.*",
             "cuda-cudart": f"{cuda_ver_raw}.*",
