@@ -45,3 +45,5 @@ position_lr_final = 0.0000016
 shfeature_lr = 0.005
 feature_lr = 0.0025
 loss_thresh = 0.1
+
+# MODULAR_GS_SIGNATURE: f5fc90a3d328343adb1e47828f2704fc6b2d097c65e29859575624b6fb854943b41364763e71d737d25e0e1bd10a075e22929d0a9edacb0424c74d605c1d0f5b

@@ -49,4 +49,4 @@ help_command = "HELP_COMMAND" # Specify the command to run for showing the help 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
 
-# MODULAR_GS_SIGNATURE: 26049020cb99bd70da9e7e8e4b0cf44ffcef7d421d99d7dca9c52ef2da094d13bd4d4f60e3e417f4fad4c543357b1c5a70dd999f8adab43ab1336ca55ed81b30
+# MODULAR_GS_SIGNATURE: 10308e3cacc6bf7753ae52553e2ba13f1e346f6982ca89ac8bd15b6d5b7c9102270301c3a213f2ff9b7e35fba8a18be52fa13625106a3f64c9be4a3269988c92

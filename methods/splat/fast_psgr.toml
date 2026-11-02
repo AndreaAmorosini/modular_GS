@@ -87,3 +87,5 @@ help_command = "python {{method_vendor_dir}}/fast-pgsr/train.py --help"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: 6f97e55f55f5bea7d1bbf2c1d01c2ce9b656753f351072ca2142762eae2e18614820872bd5b3a4123af6b34d353d1da0c77b68bcaa088fc2dac2ef09b77215d1

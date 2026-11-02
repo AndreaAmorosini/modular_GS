@@ -74,4 +74,4 @@ colmap mapper \
 model_dir = "{{step_output_dir}}"
 database_path = "{{step_output_dir}}/distorted/database.db"
 
-# MODULAR_GS_SIGNATURE: 62264f2ce9df68ca5e39208093dbc7ce924082db4c1365c9739289f17983c35cb3e53aba13513a4df06e96c965d6cae962318ecb3b5e145200eda60ec39329bb
+# MODULAR_GS_SIGNATURE: 3b1746dfca525837827565998d34ed66ae1ab58d20a62421ca67f0fc9b7adcbeb955d0f46566091f407c0ee412b0a199635155696aee0d53fba53facc98c196c

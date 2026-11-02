@@ -17,4 +17,4 @@ images_dir = "{{context.Extraction_sharp_images}}"
 [steps.kwargs]
 max_images = 0
 
-# MODULAR_GS_SIGNATURE: f0cb97876371d76b8f1979907e7022761bdb4e427fbdfc7ad19665f6371dc87c52443b8a5154c6fb1091b9115049685a6b47c16f2f73bdb96acb49f65fb0b89e
+# MODULAR_GS_SIGNATURE: 2d9dab2c240cf1d1fa17463f0dc7d8f177368525f4aef3b3a654654c556b0ea9a902eed5c64253b1f70cef239d317ab5471ef1d3e5290455cfba72f4efb319f9

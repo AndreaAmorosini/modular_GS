@@ -80,3 +80,5 @@ help_command = "python {{method_vendor_dir}}/fast-dropgaussian/train.py --help"
 
 [execution.outputs]
 trained_model_dir = "{{step_output_dir}}"
+
+# MODULAR_GS_SIGNATURE: 381789a2e6721025c0a9490210ef2b14d115761479ee2cc955bc4cbf3fbd3f24464a6415883fa92b0326f37462d579d08dabf4cea7b670014b36353b10a2d41f
