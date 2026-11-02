@@ -12,6 +12,7 @@ import PIL.Image
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as pl
 import numpy as np
+import subprocess
 
 MAST3R_REPO_PATH = "submodules"
 sys.path.insert(0, MAST3R_REPO_PATH)
@@ -188,7 +189,14 @@ def get_reconstructed_scene(
     # Use the provided output directory directly.
     cache_dir = outdir
 
-    file_names = os.listdir(filelist)
+    # file_names = os.listdir(filelist)
+
+    valid_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+    
+    file_names = [
+        f for f in os.listdir(filelist)
+        if os.path.splitext(f)[1].lower() in valid_exts
+    ]
     file_names.sort()
     filelist = [os.path.join(filelist, filename) for filename in file_names]
 
@@ -209,6 +217,8 @@ def get_reconstructed_scene(
         os.remove(colmap_db_path)
     os.makedirs(os.path.dirname(colmap_db_path), exist_ok=True)
     colmap_db = COLMAPDatabase.connect(colmap_db_path)
+
+    
     try:
         kapture_to_colmap(
             kdata,

@@ -1,10 +1,23 @@
 import subprocess
 import os
+import re
+import shlex
 import jinja2
 from pathlib import Path
 from typing import Dict, Any, Optional
-from core.utils import get_or_download_pixi, RichLogger
+from core.utils import get_or_download_pixi, RichLogger, run_command_captured
 import json
+
+# Characters that could break the shell command or enable injection when a
+# value is interpolated into it. Values containing any of these (or whitespace)
+# get shell-quoted; plain paths and identifiers stay untouched.
+_SHELL_UNSAFE = re.compile(r"[;&|`$<>\\\"'\n]|\s")
+
+
+def _shell_safe(value: str) -> str:
+    if _SHELL_UNSAFE.search(value):
+        return shlex.quote(value)
+    return value
 
 class MethodRunner:
     def __init__(self, method_config: dict, env_path: Path, base_path: Path, verbose: bool = False):
@@ -70,7 +83,13 @@ class MethodRunner:
 
         template_vars["outputs"] = resolved_outputs
         
-        final_cmd = self._render_string(raw_cmd, template_vars)
+        # Quoted copy for the command: user-provided values must not be able to
+        # break out of the shell command built from the method TOML.
+        cmd_vars = dict(template_vars)
+        cmd_vars["inputs"] = {k: _shell_safe(v) if isinstance(v, str) else v for k, v in inputs.items()}
+        cmd_vars["kwargs"] = {k: _shell_safe(v) if isinstance(v, str) else v for k, v in kwargs.items()}
+        
+        final_cmd = self._render_string(raw_cmd, cmd_vars)
         self.logger.debug(f"Payload comando:\n{final_cmd.strip()}")
         
         manifest_path = self.env_path / "pixi.toml"
@@ -99,12 +118,13 @@ class MethodRunner:
         cmd_list += ["bash", "-c", final_cmd]
         
         try:
-            subprocess.check_call(
+            run_command_captured(
                 cmd_list,
                 cwd=self.project_root,
                 env=os.environ,
-                stdout=None if self.verbose else subprocess.DEVNULL,
-                stderr=None if self.verbose else subprocess.DEVNULL,
+                verbose=self.verbose,
+                logger=self.logger,
+                log_path=step_output_dir / "run_output.log",
             )
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Execution failed with output: {e}")

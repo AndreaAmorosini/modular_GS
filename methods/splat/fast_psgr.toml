@@ -1,0 +1,89 @@
+title = "Fast-PGSR"
+description = "FastGS variant for accelerated surface reconstruction based on PGSR."
+url = "https://github.com/fastgs/FastGS/tree/fast-pgsr"
+type = "gaussian_splatting"
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+torch_version = "2.0.1"
+torchvision_version = "0.15.2"
+
+[installation]
+shared_env = true
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+dependencies = [
+    "glm",
+    "plyfile",
+    "websockets",
+]
+
+pip_dependencies = [
+    "plyfile",
+    "tqdm",
+    "setuptools",
+    "wheel",
+    "websockets",
+    "opencv-python<4.10.0",
+    "lpips",
+    "trimesh",
+    "open3d",
+    "scipy",
+    "matplotlib",
+]
+
+build_commands = [
+    "pip install 'setuptools<81' wheel packaging",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-pgsr/submodules/diff-gaussian-rasterization_fastgs'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-pgsr/submodules/diff-plane-rasterization'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-pgsr/submodules/simple-knn'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-pgsr/submodules/fused-ssim'",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/fastgs/FastGS"
+branch = "fast-pgsr"
+path = "fast-pgsr"
+recursive = true
+
+[validation]
+validation_command = """
+python -c 'import sys; \
+sys.path.append("vendor/fast-pgsr"); \
+import torch; print(f"Torch: {torch.__version__}, CUDA: {torch.cuda.is_available()}"); \
+import diff_gaussian_rasterization_fastgs; print("diff_gaussian_rasterization_fastgs OK"); \
+import simple_knn; print("simple_knn OK"); \
+import fused_ssim; print("fused_ssim OK"); \
+import scene; import gaussian_renderer; print("Fast-PGSR validation OK")'
+"""
+
+[execution]
+command = """
+python {{method_vendor_dir}}/fast-pgsr/train.py \
+    -s {{inputs.source_path}} \
+    -m {{outputs.trained_model_dir}} \
+    -r {{kwargs.get('resolution', 2)}} \
+    --eval \
+    --ncc_scale {{kwargs.get('ncc_scale', 0.5)}} \
+    --opacity_cull_threshold {{kwargs.get('opacity_cull_threshold', 0.05)}} \
+    --densification_interval {{kwargs.get('densification_interval', 500)}} \
+    --test_iterations {{kwargs.get('test_iterations', 30000)}} \
+    --highfeature_lr {{kwargs.get('highfeature_lr', 0.02)}} \
+    --grad_abs_thresh {{kwargs.get('grad_abs_thresh', 0.0004)}} \
+    --mult {{kwargs.get('mult', 0.7)}} \
+    --iterations {{kwargs.get('iterations', 30000)}} \
+    --data_device {{kwargs.get('data_device', 'cpu')}}
+"""
+
+[execution.inputs]
+expected_input_images_folder = "images"
+expected_colmap_folder = "sparse/0"
+expected_db_folder = "."
+
+[execution.help]
+help_command = "python {{method_vendor_dir}}/fast-pgsr/train.py --help"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"

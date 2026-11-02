@@ -2,6 +2,7 @@
 vendor
 .envs/
 bin/
+.pixi/
 /inputs/**/*
 !/inputs/**/
 !/inputs/**/.gitkeep
@@ -9,3 +10,4 @@ bin/
 /output/**/*
 !/output/**/
 !/output/**/.gitkeep
+TODO.txt

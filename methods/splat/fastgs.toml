@@ -68,9 +68,16 @@ print(\"VALIDATION COMPLETE\")'
 [execution]
 command = """
 python {{method_vendor_dir}}/fastgs/convert.py -s {{inputs.source_path}} --skip_matching &&
-python {{method_vendor_dir}}/fastgs/train.py \
+CUDA_LAUNCH_BLOCKING=1 python {{method_vendor_dir}}/fastgs/train.py \
     -s {{inputs.source_path}} \
     --model_path {{outputs.trained_model_dir}} \
+    --resolution {{kwargs.resolution}} \
+    --sh_degree {{kwargs.sh_degree}} \
+    --optimizer_type {{kwargs.optimizer_type}} \
+    --highfeature_lr {{kwargs.highfeature_lr}} \
+    --lowfeature_lr {{kwargs.lowfeature_lr}} \
+    --dense {{kwargs.dense}} \
+    --mult {{kwargs.mult}} \
     --iterations {{kwargs.iterations}} \
     --densify_grad_threshold {{kwargs.densify_grad_threshold}} \
     --grad_abs_thresh {{kwargs.grad_abs_thresh}} \
@@ -83,8 +90,15 @@ python {{method_vendor_dir}}/fastgs/train.py \
     --feature_lr {{kwargs.feature_lr}} \
     --loss_thresh {{kwargs.loss_thresh}} \
     --data_device cpu \
+    --resolution {{kwargs.get('resolution', 4)}} \
+    --mult {{kwargs.get('mult', 0.25)}} \
+    --densify_from_iter {{kwargs.get('densify_from_iter', 1000)}} \
+    --densify_until_iter {{kwargs.get('densify_until_iter', 8000)}} \
+    --densification_interval {{kwargs.get('densification_interval', 300)}} \
+    --opacity_reset_interval {{kwargs.get('opacity_reset_interval', 1000)}} \
     --random_background \
 """
+
 
 [execution.inputs]
 expected_input_images_folder = "input"

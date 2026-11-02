@@ -6,20 +6,21 @@ type = "gaussian_splatting"
 
 [environment]
 python_version = "3.10"
-cuda = "11.8"
+cuda = "12.6"
 PYTHONNOUSERSITE = "1"
+UV_HTTP_TIMEOUT = "300"
 torch_version = "2.7.1"
 torchvision_version = "0.22.1"
 
 [installation]
 shared_env = true
-channels = ["pytorch", "nvidia", "conda-forge"]
+channels = ["conda-forge", "nvidia", "pytorch"]
 
 dependencies = [
 ]
 
 pip_dependencies = [
-    "numpy<2.0.0",
+    "numpy>=2.0,<3.0",
     "tqdm",
     "typing_extensions",
     "tyro",
@@ -28,13 +29,15 @@ pip_dependencies = [
     "lpips",
     "matplotlib",
     "tensorboard",
+    "jaxtyping"
 ]
 
 build_commands = [
-    "pip install --no-build-isolation -r {{method_vendor_dir}}/gsplat/examples/requirements.txt",
-    "pip install --no-build-isolation -e {{method_vendor_dir}}/gsplat",
+    "bash -c \"grep -v -E '^[[:space:]]*(torch|torchvision|nvidia-|triton)([=<>~[:space:]]|$)' {{method_vendor_dir}}/gsplat/examples/requirements.txt > /tmp/gsplat_requirements_no_torch.txt\"",
+    "pip install --no-build-isolation -r /tmp/gsplat_requirements_no_torch.txt",
+    "bash -c 'python - <<\"PY\"\nfrom pathlib import Path\nimport re\nroot = Path(\"{{method_vendor_dir}}/gsplat/gsplat/cuda/csrc\")\npat = re.compile(r\"::cuda::ceil_div<[^>]+>\\(([^,\\n]+),\\s*([^)]+)\\)\")\nfor p in root.rglob(\"*\"):\n    if p.suffix in {\".cu\", \".cuh\", \".cpp\", \".h\", \".hpp\"}:\n        s = p.read_text()\n        ns = s\n        ns = pat.sub(r\"((\\1 + \\2 - 1) / \\2)\", ns)\n        ns = ns.replace(\"cudaEventCreate(&events[device_id], cudaEventDisableTiming)\", \"cudaEventCreateWithFlags(&events[device_id], cudaEventDisableTiming)\")\n        ns = ns.replace(\"cudaEventCreate(&merge_event, cudaEventDisableTiming)\", \"cudaEventCreateWithFlags(&merge_event, cudaEventDisableTiming)\")\n        ns = ns.replace(\"cudaEventCreateWithFlags &events[device_id], cudaEventDisableTiming)\", \"cudaEventCreateWithFlags(&events[device_id], cudaEventDisableTiming)\")\n        ns = ns.replace(\"cudaEventCreateWithFlags &merge_event, cudaEventDisableTiming)\", \"cudaEventCreateWithFlags(&merge_event, cudaEventDisableTiming)\")\n        if ns != s:\n            print(f\"patched {p}\")\n            p.write_text(ns)\nPY'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation --no-deps -e {{method_vendor_dir}}/gsplat'",
 ]
-
 
 [[installation.git_repos]]
 url = "https://github.com/nerfstudio-project/gsplat"
@@ -45,18 +48,125 @@ recursive = true
 [validation]
 validation_command = "python -c 'import gsplat; print(f\"GSplat version: {gsplat.__version__}\"); import torch; print(f\"CUDA Available: {torch.cuda.is_available()}\")'"
 
+# [execution]
+# command = """
+# python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py default \
+#     --data-dir {{inputs.source_path}} \
+#     --result-dir {{outputs.trained_model_dir}} \
+#     --data-factor 1 \
+#     --disable-viewer \
+#     --save-ply \
+#     --max-steps {{kwargs.get('iterations', 60000)}} \
+#     --app-opt \
+#     --antialiased \
+# """
+
+# --strategy.cap_max {{kwargs.get('cap_max', 800000)}} \
+
+
+# [execution]
+# command = """
+# python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py {{kwargs.get('method', 'mcmc')}} \
+#     --data-dir {{inputs.source_path}} \
+#     --result-dir {{outputs.trained_model_dir}} \
+#     --data-factor {{kwargs.get('data_factor', 1)}} \
+#     --disable-viewer \
+#     --save-ply \
+#     --max-steps {{kwargs.get('iterations', 50000)}} \
+#     --init-scale {{kwargs.get('init_scale', 0.5)}} \
+#     --init-opa {{kwargs.get('init_opa', 0.3)}} \
+#     --packed \
+#     --sparse-grad \
+#     --sh-fp16 \
+#     --app-opt \
+#     --app-embed-dim {{kwargs.get('app_embed_dim', 8)}} \
+#     --strategy.cap-max {{kwargs.get('cap_max', 800000)}} \
+#     --strategy.refine-stop-iter {{kwargs.get('refine_stop_iter', 20000)}} \
+#     --strategy.refine-every {{kwargs.get('refine_every', 200)}} \
+#     --strategy.noise-injection-stop-iter {{kwargs.get('noise_injection_stop_iter', 15000)}}
+# """
+
+# ---------------------------------------------------------------
+# [execution]
+# command = """
+# CUDA_VISIBLE_DEVICES={{kwargs.get('cuda_visible_devices', 0)}} python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py {{'mcmc' if kwargs.get('use_mcmc', true) else 'default'}} \
+#     --data-dir {{inputs.source_path}} \
+#     --result-dir {{outputs.trained_model_dir}} \
+#     --data-factor {{kwargs.get('num_downscales', kwargs.get('data_factor', 2))}} \
+#     --test-every {{kwargs.get('test_every', 1000000000)}} \
+#     --disable-viewer \
+#     --disable-video \
+#     --eval-steps {{kwargs.get('eval_steps', -1)}} \
+#     --render-traj-path {{kwargs.get('render_traj_path', 'raw')}} \
+#     --camera-model {{kwargs.get('camera_model', 'pinhole')}} \
+#     --init-type {{kwargs.get('init_type', 'sfm')}} \
+#     --max-steps {{kwargs.get('max_num_iterations', kwargs.get('iterations', 30000))}} \
+#     --sh-degree {{kwargs.get('sh_degree', 3)}} \
+#     --sh-degree-interval {{kwargs.get('sh_degree_interval', 1000)}} \
+#     --ssim-lambda {{kwargs.get('ssim_lambda', 0.15)}} \
+#     --packed \
+#     --sparse-grad \
+#     --antialiased \
+#     --init-opa {{kwargs.get('init_opa', 0.2)}} \
+#     --init-scale {{kwargs.get('init_scale', 0.15)}} \
+#     --opacity-reg {{kwargs.get('mcmc_opacity_reg', kwargs.get('opacity_reg', 0.004))}} \
+#     --scale-reg {{kwargs.get('mcmc_scale_reg', kwargs.get('scale_reg', 0.008))}} \
+#     --means-lr {{kwargs.get('means_lr', 0.00012)}} \
+#     --scales-lr {{kwargs.get('scales_lr', 0.003)}} \
+#     --opacities-lr {{kwargs.get('opacities_lr', 0.03)}} \
+#     --quats-lr {{kwargs.get('quats_lr', 0.001)}} \
+#     --sh0-lr {{kwargs.get('sh0_lr', 0.0025)}} \
+#     --shN-lr {{kwargs.get('shN_lr', 0.00025)}} \
+#     --global-scale {{kwargs.get('dataparser_scale', kwargs.get('global_scale', 1.0))}} \
+#     --strategy.cap-max {{kwargs.get('cap_max', 1200000)}} \
+#     --strategy.refine-start-iter {{kwargs.get('refine_start_iter', 750)}} \
+#     --strategy.refine-stop-iter {{kwargs.get('refine_stop_iter', 22000)}} \
+#     --strategy.refine-every {{kwargs.get('refine_every', 150)}} \
+#     --strategy.noise-injection-stop-iter {{kwargs.get('noise_injection_stop_iter', 12000)}} \
+#     --strategy.min-opacity {{kwargs.get('cull_alpha_thresh', kwargs.get('min_opacity', 0.01))}} \
+#     --save-ply
+# """
+# ---------------------------------------------------------------------
+
 [execution]
 command = """
-python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py mcmc \
+python {{method_vendor_dir}}/gsplat/examples/simple_trainer.py {{kwargs.get('method', 'mcmc')}} \
     --data-dir {{inputs.source_path}} \
     --result-dir {{outputs.trained_model_dir}} \
-    --data-factor 1 \
+    --data-factor {{kwargs.get('data_factor', 3)}} \
+    --test-every {{kwargs.get('test_every', 1000000000)}} \
     --disable-viewer \
-    --save-ply \
-    --max-steps {{kwargs.get('iterations', 60000)}} \
-    --app-opt \
-    --antialiased
+    --disable-video \
+    --eval-steps {{kwargs.get('eval_steps', 7000)}} \
+    --render-traj-path {{kwargs.get('render_traj_path', 'raw')}} \
+    --camera-model {{kwargs.get('camera_model', 'pinhole')}} \
+    --init-type {{kwargs.get('init_type', 'sfm')}} \
+    --max-steps {{kwargs.get('iterations', 30000)}} \
+    --sh-degree {{kwargs.get('sh_degree', 3)}} \
+    --sh-degree-interval {{kwargs.get('sh_degree_interval', 1000)}} \
+    --ssim-lambda {{kwargs.get('ssim_lambda', 0.20)}} \
+    --packed \
+    --sparse-grad \
+    --antialiased \
+    --init-opa {{kwargs.get('init_opa', 0.5)}} \
+    --init-scale {{kwargs.get('init_scale', 0.35)}} \
+    --opacity-reg {{kwargs.get('opacity_reg', 0.002)}} \
+    --scale-reg {{kwargs.get('scale_reg', 0.004)}} \
+    --means-lr {{kwargs.get('means_lr', 0.00012)}} \
+    --scales-lr {{kwargs.get('scales_lr', 0.004)}} \
+    --opacities-lr {{kwargs.get('opacities_lr', 0.035)}} \
+    --quats-lr {{kwargs.get('quats_lr', 0.001)}} \
+    --sh0-lr {{kwargs.get('sh0_lr', 0.0025)}} \
+    --shN-lr {{kwargs.get('shN_lr', 0.00025)}} \
+    --strategy.cap-max {{kwargs.get('cap_max', 1500000)}} \
+    --strategy.refine-start-iter {{kwargs.get('refine_start_iter', 750)}} \
+    --strategy.refine-stop-iter {{kwargs.get('refine_stop_iter', 22000)}} \
+    --strategy.refine-every {{kwargs.get('refine_every', 150)}} \
+    --strategy.noise-injection-stop-iter {{kwargs.get('noise_injection_stop_iter', 18000)}} \
+    --strategy.min-opacity {{kwargs.get('min_opacity', 0.006)}} \
+    --save-ply
 """
+
 
 [execution.inputs]
 expected_input_images_folder = "images"

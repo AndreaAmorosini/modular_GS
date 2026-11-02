@@ -1,0 +1,33 @@
+[workspace]
+name = "modular_GS"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+conda-pypi-map = {}
+
+[dependencies]
+python = "3.10.*"
+typer = "*"
+tomli = "*"
+tomli-w = "*"
+jinja2 = "*"
+rerun-sdk = "*"
+pyyaml = "*"
+plyfile = "*"
+numpy = "*"
+
+[pypi-dependencies]
+opencv-python = "*"
+fastapi = "*"
+uvicorn = "*"
+python-multipart = "*"
+ecdsa = "*"
+
+[feature.dev.pypi-dependencies]
+httpx2 = "*"
+
+[environments]
+dev = ["default", "dev"]
+
+[tasks]
+web = "python main.py web"

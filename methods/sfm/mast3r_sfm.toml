@@ -4,40 +4,46 @@ url = "https://github.com/naver/mast3r_sfm"
 type = "sfm"
 
 [environment]
-python_version = "3.11"
-cuda = "12.1"
+python_version = "3.10"
+cuda = "12.6"
 PYTHONNOUSERSITE = "1"
-torch_version = "2.1.2"
-torchvision_version = "0.16.2"
+torch_version = "2.7.1"
+torchvision_version = "0.22.1"
 
 
 [installation]
 share_env = false
-channels = ["pytorch", "nvidia", "conda-forge"]
+channels = ["conda-forge", "nvidia", "pytorch"]
 
 dependencies = [
-    "ffmpeg",
+    "ffmpeg=6.1.*",
     "gxx_linux-64=11.*", 
     "make",
     "cmake",
+    "ninja",
     "gcc_linux-64=11.*",
-    "glomap",
+    "colmap=3.10.*",
+    "numpy<2.0.0",
+    "glomap=1.1.*",
 ]
 
 pip_dependencies = [
-    "pycolmap",
     "cython",
+    "opencv-python<4.10.0",
+    "pycolmap==0.6.1",
 ]
 
 build_commands = [
-    "pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu118",
-    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu11' 'numpy<2.0.0'",
+    "pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126",
+    "pip install 'opencv-python<4.10.0' 'faiss-gpu-cu12'",
 
     "pip install -r {{method_vendor_dir}}/mast3r/requirements.txt",
 
     "pip install -r {{method_vendor_dir}}/mast3r/dust3r/requirements.txt",
     "pip install -r {{method_vendor_dir}}/mast3r/dust3r/requirements_optional.txt",
 
+    "pip install --force-reinstall --no-deps pycolmap==3.13.0",
+    
     "bash -c 'cd {{method_vendor_dir}}/asmk/cython && cythonize *.pyx'",
     "bash -c 'cd {{method_vendor_dir}}/asmk && python setup.py build_ext --inplace'",
     "pip install 'numpy<2.0.0'",

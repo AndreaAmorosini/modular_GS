@@ -1,4 +1,4 @@
-import toml
+import tomli as toml
 import logging
 import subprocess
 import shlex
@@ -84,7 +84,8 @@ class Validator:
         if not entry:
             return None
         if entry["__config__"] is None:
-            config = toml.load(entry["__path__"])
+            with open(entry["__path__"], "rb") as f:
+                config = toml.load(f)
             config["__id__"] = method_id
             config["__path__"] = entry["__path__"]
             entry["__config__"] = config

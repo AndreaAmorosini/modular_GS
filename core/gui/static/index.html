@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModularGS</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="/logo.png" alt="ModularGS" class="brand-logo" onerror="this.style.display='none'">
+        <h1>Modular<span>GS</span></h1>
+      </div>
+      <nav class="nav">
+        <a href="#home" data-view="home" class="active">Run Pipeline</a>
+        <a href="#methods" data-view="methods">Manage Methods</a>
+        <a href="#pipelines" data-view="pipelines">Pipeline Manager</a>
+        <a href="#inputs" data-view="inputs">Inputs</a>
+        <a href="#outputs" data-view="outputs">Outputs</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="https://github.com/AndreaAmorosini/modular_GS" target="_blank" rel="noopener">GitHub</a>
+        <span class="conn-dot" id="conn-dot" title="Server connection"></span>
+      </div>
+    </aside>
+
+    <main id="view" class="view"></main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modal-backdrop">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

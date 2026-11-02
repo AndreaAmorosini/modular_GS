@@ -30,7 +30,109 @@ method = "methods/splat/gsplat.toml"
 [steps.inputs]
 #{StepName}_{output_name}
 source_path = "{{context.StructureFromMotion_model_dir}}"
+# [steps.kwargs]
+# # method = "mcmc"
+# iterations = 70000
+# cap_max = 1000000
+# # data_factor = 2
+# # init_scale = 0.7
+# # init_opa = 0.3
+# # app_embed_dim = 8
+# # cap_max = 1000000
+# # refine_stop_iter = 25000
+# # refine_every = 200
+# # noise_injection_stop_iter = 18000
+
+
+# [steps.kwargs]
+# method = "mcmc"
+
+# data_factor = 1
+# test_every = 1000000000
+# eval_steps = 7000
+# render_traj_path = "raw"
+# camera_model = "pinhole"
+# init_type = "sfm"
+
+# iterations = 30000
+# sh_degree = 3
+# sh_degree_interval = 1000
+# ssim_lambda = 0.20
+
+# init_opa = 0.5
+# init_scale = 0.35
+# opacity_reg = 0.002
+# scale_reg = 0.004
+
+# means_lr = 0.00012
+# scales_lr = 0.004
+# opacities_lr = 0.035
+# quats_lr = 0.001
+# sh0_lr = 0.0025
+# shN_lr = 0.00025
+
+# cap_max = 1500000
+# refine_start_iter = 750
+# refine_stop_iter = 22000
+# refine_every = 150
+# noise_injection_stop_iter = 18000
+# min_opacity = 0.006
+
+#----------------------------------------
+
 [steps.kwargs]
-iterations = 100000
+method = "mcmc"
+
+data_factor = 1
+test_every = 1000000000
+eval_steps = 7000
+render_traj_path = "raw"
+camera_model = "pinhole"
+init_type = "sfm"
+
+iterations = 40000
+sh_degree = 3
+sh_degree_interval = 1000
+ssim_lambda = 0.15
+
+init_opa = 0.2
+init_scale = 0.15
+
+opacity_reg = 0.004
+scale_reg = 0.008
+
+means_lr = 0.00012
+scales_lr = 0.003
+opacities_lr = 0.03
+quats_lr = 0.001
+sh0_lr = 0.0025
+shN_lr = 0.00025
+
+cap_max = 1200000
+refine_start_iter = 750
+refine_stop_iter = 22000
+refine_every = 150
+noise_injection_stop_iter = 12000
+min_opacity = 0.01
+
+#------------------------------------
+
+# data_factor = 1
+# iterations = 45000
+
+# init_opa = 0.1
+# init_scale = 0.10
+
+# opacity_reg = 0.006
+# scale_reg = 0.012
+
+# cap_max = 900000
+# noise_injection_stop_iter = 8000
+# min_opacity = 0.015
+
+# ------------------------------------
+
+
+
 
 # MODULAR_GS_SIGNATURE: 5a61acc8fa6d189fb4271a7bf433d2042924f800b6469d678906b6520ea0f0c2494e1bbc4ad4cf78ef54eec78cb6aac0154cb658b6594ccb294319906dc191c7

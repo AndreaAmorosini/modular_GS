@@ -38,4 +38,40 @@ build_commands = [
 [validation]
 validation_command = "colmap help"
 
+[execution]
+command = """
+bash -c '
+set -e
+
+unset QT_PLUGIN_PATH
+unset QT_QPA_PLATFORM_PLUGIN_PATH
+export QT_QPA_PLATFORM=offscreen
+export OPENCV_LOG_LEVEL=ERROR
+
+mkdir -p {{outputs.model_dir}}/input
+mkdir -p {{outputs.model_dir}}/distorted/sparse
+
+cp -r {{inputs.images_dir}}/. {{outputs.model_dir}}/input/
+
+colmap feature_extractor \
+    --database_path {{outputs.database_path}} \
+    --image_path {{outputs.model_dir}}/input \
+    --ImageReader.single_camera 1 \
+    --SiftExtraction.use_gpu {{kwargs.get("use_gpu", 1)}}
+
+colmap exhaustive_matcher \
+    --database_path {{outputs.database_path}} \
+    --SiftMatching.use_gpu {{kwargs.get("use_gpu", 1)}}
+
+colmap mapper \
+    --database_path {{outputs.database_path}} \
+    --image_path {{outputs.model_dir}}/input \
+    --output_path {{outputs.model_dir}}/distorted/sparse
+'
+"""
+
+[execution.outputs]
+model_dir = "{{step_output_dir}}"
+database_path = "{{step_output_dir}}/distorted/database.db"
+
 # MODULAR_GS_SIGNATURE: 62264f2ce9df68ca5e39208093dbc7ce924082db4c1365c9739289f17983c35cb3e53aba13513a4df06e96c965d6cae962318ecb3b5e145200eda60ec39329bb

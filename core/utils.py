@@ -42,7 +42,14 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     machine = platform.machine().lower()  # x86_64, arm64
 
     # Mappatura URL rilasci ufficiali
-    base_url = "https://github.com/prefix-dev/pixi/releases/latest/download"
+    PIXI_VERSION = "v0.67.0"
+    base_url = f"https://github.com/prefix-dev/pixi/releases/download/{PIXI_VERSION}"
+
+    # Known sha256 of the release archives; archives not listed here are
+    # extracted but cannot be verified (a warning is logged).
+    PIXI_SHA256 = {
+        "pixi-x86_64-unknown-linux-musl.tar.gz": "8cd89036e77a7b63ae1e85d9b89adb29d506527720ef9a26536534c2813eb0c2",
+    }
 
     if system == "linux":
         file_name = "pixi-x86_64-unknown-linux-musl.tar.gz"
@@ -61,6 +68,25 @@ def get_or_download_pixi(base_dir: Path) -> Path:
     try:
         logging.info(f"Downloading {url}...")
         urllib.request.urlretrieve(url, archive_path)
+
+        expected_sha = PIXI_SHA256.get(file_name)
+        if expected_sha:
+            import hashlib
+
+            sha = hashlib.sha256()
+            with open(archive_path, "rb") as af:
+                for chunk in iter(lambda: af.read(1024 * 1024), b""):
+                    sha.update(chunk)
+            if sha.hexdigest() != expected_sha:
+                archive_path.unlink()
+                raise RuntimeError(
+                    f"Checksum mismatch for downloaded Pixi archive ({file_name}). "
+                    f"Expected {expected_sha}, got {sha.hexdigest()}. Download rejected."
+                )
+        else:
+            logging.warning(
+                f"[SECURITY] No known checksum for {file_name}; skipping archive verification."
+            )
 
         if file_name.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zip_ref:
@@ -277,6 +303,94 @@ def run_command(
                 logger.critical(f"Comando fallito dopo {retry_limit} tentativi.")
                 raise
 
+def run_command_captured(
+    command,
+    *,
+    cwd=None,
+    env=None,
+    verbose: bool = False,
+    logger: "RichLogger | None" = None,
+    tail_lines: int = 200,
+    log_path: Path | None = None,
+) -> None:
+    """Run a subprocess capturing its combined output.
+
+    Streams lines to logger.debug when verbose, keeps the last `tail_lines`
+    lines in memory, and on failure logs the tail plus the full output to
+    `log_path` before raising CalledProcessError. Replaces the previous
+    DEVNULL behavior that made failures impossible to debug.
+    """
+    from collections import deque
+
+    cmd_str = command if isinstance(command, str) else " ".join(str(c) for c in command)
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    tail = deque(maxlen=tail_lines)
+    try:
+        for line in iter(process.stdout.readline, ""):
+            if not line:
+                break
+            line = line.rstrip("\n")
+            tail.append(line)
+            if verbose and logger is not None:
+                logger.debug(line)
+    finally:
+        process.stdout.close()
+        returncode = process.wait()
+
+    if returncode == 0:
+        return
+
+    if log_path is not None:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("\n".join(tail) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+    if logger is not None:
+        logger.error(f"Command failed with exit code {returncode}: {cmd_str}")
+        for line in list(tail)[-30:]:
+            logger.error(f"  | {line}")
+        if log_path is not None:
+            logger.error(f"Full output saved to: {log_path}")
+
+    raise subprocess.CalledProcessError(returncode, cmd_str)
+
+
+def get_dir_size(path: Path) -> int:
+    """Size in bytes of a directory tree. Uses `du -sb` when available."""
+    try:
+        proc = subprocess.run(
+            ["du", "-sb", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        out = proc.stdout.strip().split()
+        if out:
+            return int(out[0])
+    except Exception:
+        pass
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += (Path(root) / f).stat().st_size
+            except OSError:
+                pass
+    return total
+
+
 class SignatureVerifier:
     """
     Manage the verification of the TOML files through the expected signature of the functions.
@@ -301,7 +415,7 @@ class SignatureVerifier:
             try:
                 self.public_key = VerifyingKey.from_string(bytes.fromhex(self.PUBLIC_KEY_HEX), curve=NIST256p)
                 self.can_verify = True
-                logging.info("[SECURITY] Public key loaded for signature verification.")
+                # logging.info("[SECURITY] Public key loaded for signature verification.")
             except Exception as e:
                 logging.error(f"[SECURITY] Failed to load public key: {e}")
         else:
@@ -374,7 +488,10 @@ class SignatureVerifier:
         logging.error(f"[SECURITY] Signature verification failed for: {file_path.name}")
         return False
     
-def verify_file_interactive(file_path: Path, verbose: bool = False) -> None:
+def verify_file_interactive(file_path: Path, verbose: bool = False, assume_yes: bool = False) -> None:
+    """Verify a TOML signature. If assume_yes is True the user is warned but the
+    operation proceeds without an interactive confirmation prompt (used by the
+    web interface and by `methods install --force`)."""
     verifier = SignatureVerifier()
     if verifier.verify(file_path):
         print(f"File '{file_path.name}' is valid.")
@@ -407,6 +524,10 @@ def verify_file_interactive(file_path: Path, verbose: bool = False) -> None:
     typer.echo(f" Origin: {url}")
     typer.echo(" This file may have been modified or comes from an untrusted source.")
     typer.secho("!" * 60 + "\n", fg=typer.colors.RED)
+
+    if assume_yes:
+        logging.warning(f"Signature check failed but --force given: proceeding with unverified file: {file_path}")
+        return
 
     if not typer.confirm("Do you want to proceed anyway?", default=False):
         logging.error("Operation aborted by user due to security check.")

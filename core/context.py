@@ -31,7 +31,7 @@ class PipelineContext:
         
         # Se non specificato, usa default
         if "output_dir" not in self.data:
-            self.output_dir = project_root / "outputs" / "default_run"
+            self.output_dir = project_root / "output" / "default_run"
             self.data["output_dir"] = str(self.output_dir)
 
         self._setup_dirs()
@@ -41,20 +41,33 @@ class PipelineContext:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.logger.debug(f"Pipeline output directory: {self.output_dir}")
         
-        #Check on status file
         restart = self.data.get("restart", False)
-        if (self.output_dir / "pipeline_status.json").exists() and not restart:
+        status_file = self.output_dir / "pipeline_status.json"
+        
+        if restart:
+            # Explicit wipe: only --restart is allowed to delete existing data
+            if any(self.output_dir.iterdir()):
+                for item in self.output_dir.iterdir():
+                    if item.is_dir():
+                        import shutil
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                self.logger.debug(f"Cleaned output directory: {self.output_dir}")
+            return
+        
+        if status_file.exists():
+            # Resume: keep everything, runner will skip completed steps
             self.logger.debug("Found pipeline_status.json.")
             return
         
         if any(self.output_dir.iterdir()):
-            for item in self.output_dir.iterdir():
-                if item.is_dir():
-                    import shutil
-                    shutil.rmtree(item)
-                else:
-                    item.unlink()
-            self.logger.debug(f"Cleaned output directory: {self.output_dir}")
+            # Never silently delete data without an explicit --restart
+            raise RuntimeError(
+                f"Output directory '{self.output_dir}' exists and is not empty "
+                f"(no pipeline_status.json found). Use --restart to wipe it, "
+                f"or choose a different --output path."
+            )
 
     def resolve(self, template_str: Any) -> Any:
         """

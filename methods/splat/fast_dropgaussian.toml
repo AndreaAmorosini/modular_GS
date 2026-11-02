@@ -1,0 +1,82 @@
+title = "Fast-DropGaussian"
+description = "FastGS variant for sparse-view reconstruction based on DropGaussian."
+url = "https://github.com/fastgs/FastGS/tree/fast-dropgaussian"
+type = "gaussian_splatting"
+
+[environment]
+python_version = "3.10"
+cuda = "11.8"
+PYTHONNOUSERSITE = "1"
+torch_version = "2.0.1"
+torchvision_version = "0.15.2"
+
+[installation]
+shared_env = true
+channels = ["pytorch", "nvidia", "conda-forge"]
+
+dependencies = [
+    "glm",
+    "plyfile",
+    "websockets",
+]
+
+pip_dependencies = [
+    "plyfile",
+    "tqdm",
+    "setuptools",
+    "wheel",
+    "websockets",
+    "matplotlib",
+    "scipy",
+    "opencv-python<4.10.0",
+]
+
+build_commands = [
+    "pip install 'setuptools<81' wheel packaging",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-dropgaussian/submodules/diff-gaussian-rasterization_fastgs'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-dropgaussian/submodules/simple-knn'",
+    "bash -c 'MAX_JOBS=1 TORCH_CUDA_ARCH_LIST=8.9 pip install --no-build-isolation {{method_vendor_dir}}/fast-dropgaussian/submodules/fused-ssim'",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/fastgs/FastGS"
+branch = "fast-dropgaussian"
+path = "fast-dropgaussian"
+recursive = true
+
+[validation]
+validation_command = """
+python -c 'import sys; \
+sys.path.append("vendor/fast-dropgaussian"); \
+import torch; print(f"Torch: {torch.__version__}, CUDA: {torch.cuda.is_available()}"); \
+import diff_gaussian_rasterization_fastgs; print("diff_gaussian_rasterization_fastgs OK"); \
+import simple_knn; print("simple_knn OK"); \
+import fused_ssim; print("fused_ssim OK"); \
+import scene; import gaussian_renderer; print("Fast-DropGaussian validation OK")'
+"""
+
+[execution]
+command = """
+python {{method_vendor_dir}}/fast-dropgaussian/train.py \
+    -s {{inputs.source_path}} \
+    -m {{outputs.trained_model_dir}} \
+    --eval \
+    --n_views {{kwargs.get('n_views', 3)}} \
+    -r {{kwargs.get('resolution', 8)}} \
+    --lowfeature_lr {{kwargs.get('lowfeature_lr', 0.0001)}} \
+    --highfeature_lr {{kwargs.get('highfeature_lr', 0.005)}} \
+    --grad_abs_thresh {{kwargs.get('grad_abs_thresh', 0.003)}} \
+    --iterations {{kwargs.get('iterations', 30000)}} \
+    --data_device {{kwargs.get('data_device', 'cpu')}}
+"""
+
+[execution.inputs]
+expected_input_images_folder = "images"
+expected_colmap_folder = "sparse/0"
+expected_db_folder = "."
+
+[execution.help]
+help_command = "python {{method_vendor_dir}}/fast-dropgaussian/train.py --help"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}"

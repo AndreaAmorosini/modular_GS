@@ -7,16 +7,17 @@ from typing_extensions import Annotated
 from typing import List, Optional
 import subprocess
 import os
+import re
 import shlex
 import shutil
 import sys
 import json
 
 from core.runner import PipelineRunner
-from core.installer import MethodInstaller
+from core.installer import MethodInstaller, remove_shared_entries
 
 from core.validation import Validator
-from core.utils import setup_logging, get_or_download_pixi, verify_file_interactive
+from core.utils import setup_logging, get_or_download_pixi, verify_file_interactive, get_dir_size
 
 app = typer.Typer(help="Modular Pipeline for Gaussian SPlatting.")
 methods_app = typer.Typer(help="Install, validate, remove and execute methods in various pipelines.")
@@ -42,7 +43,6 @@ def _find_manifest(method_name: str) -> Path:
         (METHODS_DIR / "preprocess" / (method_name + ".toml")),
         (METHODS_DIR / "sfm" / (method_name + ".toml")),
         (METHODS_DIR / "splat" / (method_name + ".toml")),
-        (METHODS_DIR / "postproces" / (method_name + ".toml")),
     ]
     for p in candidates:
         if p.exists():
@@ -52,57 +52,6 @@ def _find_manifest(method_name: str) -> Path:
         f"Metodo '{method_name}' non trovato in {METHODS_DIR}", fg=typer.colors.RED
     )
     raise typer.Abort()
-
-
-# Helper method to remove shared entries from shared pixi.toml
-def _remove_shared_entries(method_id: str):
-    shared_manifest = ENVS_DIR / "_shared" / "pixi.toml"
-    shared_envs_dir = ENVS_DIR / "_shared" / ".pixi" / "envs"
-    if not shared_manifest.exists():
-        return
-    
-    with open(shared_manifest, "rb") as f:
-        pixi = tomli.load(f)
-        
-    tool_feature = f"tool-{method_id}"
-    envs = pixi.get("environments", {}) or {}
-    features = pixi.get("feature", {}) or {}
-    
-    envs_to_remove = [
-        name for name, cfg in envs.items()
-        if tool_feature in cfg.get("features", [] or [])
-    ]
-    for name in envs_to_remove:
-        del envs[name]
-        
-    if tool_feature in features:
-        del features[tool_feature]
-        
-    used_features = set()
-    for cfg in envs.values():
-        used_features.update(cfg.get("features", []) or [])
-        
-    base_features = [k for k in features.keys() if k.startswith("base-")]
-    for bf in base_features:
-        if bf not in used_features:
-            del features[bf]
-        
-    pixi["environments"] = envs
-    pixi["feature"] = features
-    
-    with open(shared_manifest, "wb") as f:
-        tomli_w.dump(pixi, f)
-        
-    if shared_envs_dir.exists():
-        for env_name in envs_to_remove:
-            env_path = shared_envs_dir / env_name
-            if env_path.exists():
-                import shutil
-                shutil.rmtree(env_path)
-                
-        for env_dir in shared_envs_dir.iterdir():
-            if env_dir.is_dir() and env_dir.name not in envs:
-                shutil.rmtree(env_dir)
 
 
 @app.command()
@@ -155,6 +104,14 @@ def run(
                 logger.warning(f"Malformed Parameter ignored '{param}'. Use KEY=VALUE.")
                 continue
             key, val = param.split("=", 1)
+            # Values end up interpolated into the shell commands of the method
+            # TOMLs: refuse anything that could break out of them.
+            if isinstance(val, str) and re.search(r"[;&|`<>\\\"\']|\$\(", val):
+                logger.error(
+                    f"Refusing unsafe parameter value for '{key}': "
+                    f"shell metacharacters are not allowed in --set values."
+                )
+                continue
             if val.lower() == "true": val = True
             elif val.lower() == "false": val = False
             elif val.isdigit(): val = int(val)
@@ -186,28 +143,24 @@ def run(
         raise typer.Abort()
     
 @app.command("web")
-def start_web_interface():
-    """Start the Streamlit web interface for managing pipelines and methods."""
-    logger = setup_logging(
-        level=logging.INFO,
-        allowList=LOG_ALLOWLIST,
-    )
-
-    web_ui = "core/gui/web_ui.py"
-    streamlit_bin = shutil.which("streamlit")
-    if streamlit_bin:
-        cmd = [streamlit_bin, "run", web_ui]
-    else:
-        logger.warning(
-            "Streamlit not found in PATH. Trying to run with 'python -m streamlit'..."
-        )
-        cmd = [sys.executable, "-m", "streamlit", "run", web_ui]
+def start_web_interface(
+    host: Annotated[str, typer.Option("--host", help="Bind address. Keep 127.0.0.1 unless you know what you are doing.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Port for the web interface.")] = 8501,
+):
+    """Start the FastAPI web interface for managing pipelines and methods."""
+    logger = setup_logging(level=logging.INFO, allowList=LOG_ALLOWLIST)
+    try:
+        import uvicorn
+        from core.gui.server import app as web_app
+    except ImportError as e:
+        logger.error(f"Missing dependencies for the web interface: {e}. Run 'pip install fastapi uvicorn python-multipart'.")
+        raise typer.Abort()
 
     try:
-        logger.info(f"Starting Web Interface...")
-        subprocess.check_call(cmd, cwd=PROJECT_ROOT, stdout=None, stderr=None)
+        logger.info(f"Starting Web Interface on http://{host}:{port} ...")
+        uvicorn.run(web_app, host=host, port=port, log_level="warning")
     except Exception as e:
-        logger.error(f"Failed to start Streamlit: {e}")
+        logger.error(f"Failed to start web interface: {e}")
         raise typer.Abort()
 
 
@@ -222,6 +175,9 @@ def install_method(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Skip signature verification warnings (use at your own risk).")
+    ] = False,
 ):
     """Install a method"""
     logger = setup_logging(
@@ -232,7 +188,7 @@ def install_method(
     
     method_path = _find_manifest(method_name)
     
-    verify_file_interactive(method_path, verbose=verbose)
+    verify_file_interactive(method_path, verbose=verbose, assume_yes=force)
 
     try:
         logger.info(f"Loading configuration from {method_path}...")
@@ -272,6 +228,9 @@ def uninstall_method(
     all: Annotated[
         bool, typer.Option("--all", help="Uninstall all methods.")
     ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")
+    ] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
@@ -289,7 +248,7 @@ def uninstall_method(
         
     if method_name is None and all:
         
-        if from_CLI:
+        if from_CLI and not yes:
             if not typer.confirm(
                     "Are you sure you want to delete all methods?",
                     abort=True,
@@ -300,32 +259,48 @@ def uninstall_method(
         for env_dir in installed_envs:
             method_id = env_dir.name
             logger.info(f"Uninstalling method '{method_id}'...")
-            uninstall_method(method_name=method_id, verbose=verbose, subcall=True)
+            try:
+                uninstall_method(method_name=method_id, verbose=verbose, subcall=True)
+            except typer.Abort:
+                logger.warning(f"Skipping '{method_id}': no matching manifest found.")
         return
     else:
+        cfg = {}
+        method_id = method_name
+        vendor_dirs = []
+        env_path = ENVS_DIR / method_name.replace(" ", "_").replace("-", "_").lower()
         try:
             method_path = _find_manifest(method_name)
-            with open(method_path, "rb") as f:
-                cfg = tomli.load(f)
-            method_id = method_path.stem
-            env_name = cfg.get("title", method_path.stem).replace(" ", "_").replace("-", "_").lower()
-            env_path = ENVS_DIR / env_name
-            
-            vendor_dirs = []
-            for repo in cfg.get("installation", {}).get("git_repos", []):
-                dir = repo.get("path")
-                if dir:
-                    vendor_dirs.append(VENDOR_DIR / dir)            
-        except:
-            # Fallback: prova a usare il method_name direttamente se il file non si trova
-            env_path = ENVS_DIR / method_name.replace(" ", "_").lower()
+        except typer.Abort:
+            # No manifest: allow removing an orphan environment by name
+            logger.warning(
+                f"No manifest found for '{method_name}'. "
+                f"Falling back to environment folder '{env_path.name}'."
+            )
+        else:
+            try:
+                with open(method_path, "rb") as f:
+                    cfg = tomli.load(f)
+                method_id = method_path.stem
+                env_name = cfg.get("title", method_path.stem).replace(" ", "_").replace("-", "_").lower()
+                env_path = ENVS_DIR / env_name
+
+                for repo in cfg.get("installation", {}).get("git_repos", []):
+                    dir = repo.get("path")
+                    if dir:
+                        vendor_dirs.append(VENDOR_DIR / dir)
+            except (OSError, tomllib.TOMLDecodeError) as e:
+                logger.warning(
+                    f"Could not load manifest for '{method_name}' ({e}). "
+                    f"Falling back to environment folder '{env_path.name}'."
+                )
 
         if not env_path.exists():
             logger.warning(f"No environment found in {env_path}")
             return
 
         if not subcall:
-            if from_CLI:
+            if from_CLI and not yes:
                 if not typer.confirm(
                     f"Are you sure you want to delete '{method_id}'?",
                     abort=True,
@@ -339,7 +314,7 @@ def uninstall_method(
             
             if cfg.get("installation", {}).get("shared_env", False):
                 logger.info("Deleting shared entries from pixi.toml...")
-                _remove_shared_entries(method_id)
+                remove_shared_entries(PROJECT_ROOT, method_id, logger)
 
             logger.info(f"Rimozione cartella {env_path}...")
             shutil.rmtree(env_path)
@@ -371,6 +346,9 @@ def validate(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enable verbose logging.")
     ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Skip signature verification warnings (use at your own risk).")
+    ] = False,
 ):
     """Execute the specified validation command from the TOML to check if the method is correctly installed."""
     
@@ -384,7 +362,7 @@ def validate(
     
     if not all and method_name is not None:
         method_path = _find_manifest(method_name)
-        verify_file_interactive(method_path, verbose=verbose)
+        verify_file_interactive(method_path, verbose=verbose, assume_yes=force)
         target_id = Path(method_name).stem
         validator.validate_method(target_id, all=False)
     elif all:
@@ -408,7 +386,7 @@ def list_methods():
             if child.is_dir():
                 if (child / ".install_complete").exists():
                     installed_count += 1
-                total_bytes += _get_dir_size_du_bytes(child)
+                total_bytes += get_dir_size(child)
                 
     typer.secho(f"\nAvailable Methods: {total_tools} | Installed: {installed_count} | Total Size: {_readable(total_bytes)}", bold=True)
 
@@ -499,29 +477,6 @@ def list_arguments(
             
     except Exception as e:
         logger.error(f"[ERROR] Error retrieving all methods: {e}")
-
-def _get_dir_size_du_bytes(p: Path) -> int:
-    try:
-        proc = subprocess.run(
-            ["du", "-sb", str(p)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        out = proc.stdout.strip().split()
-        if out:
-            return int(out[0])
-    except Exception:
-        # fallback: sum file sizes
-        total = 0
-        for root, _, files in os.walk(p):
-            for f in files:
-                try:
-                    total += (Path(root) / f).stat().st_size
-                except Exception:
-                    pass
-        return total
-    return 0
 
 def _readable(n: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:

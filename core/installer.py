@@ -6,7 +6,7 @@ import shlex
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
-from core.utils import get_or_download_pixi, RichLogger
+from core.utils import get_or_download_pixi, RichLogger, run_command_captured
 import urllib.request
 import re
 import json
@@ -14,6 +14,68 @@ import tomli
 import logging
 
 _custom_logger = logging.getLogger("CustomInstallLog")
+
+CLONE_TIMEOUT_SECONDS = 600
+
+
+def remove_shared_entries(base_path: Path, method_id: str, logger: "RichLogger | None" = None):
+    """Remove a method's feature and environments from the shared pixi manifest
+    and delete the corresponding environment directories. Single source of
+    truth used by both the installer and the CLI uninstall command."""
+    shared_dir = base_path / ".envs" / "_shared"
+    shared_manifest = shared_dir / "pixi.toml"
+    shared_envs_dir = shared_dir / ".pixi" / "envs"
+
+    if not shared_manifest.exists():
+        if logger:
+            logger.debug(f"No shared manifest found at {shared_manifest}. Skipping shared cleanup.")
+        return
+
+    with open(shared_manifest, "rb") as f:
+        pixi = tomli.load(f)
+
+    tool_feature = f"tool-{method_id}"
+    envs = pixi.get("environments", {})
+    features = pixi.get("feature", {})
+
+    envs_to_remove = [name for name, cfg in envs.items() if tool_feature in cfg.get("features", [])]
+
+    for name in envs_to_remove:
+        if name in envs:
+            del envs[name]
+
+    if tool_feature in features:
+        del features[tool_feature]
+
+    used_features = set()
+    for cfg in envs.values():
+        used_features.update(cfg.get("features", []))
+
+    base_features = [f for f in features.keys() if f.startswith("base-")]
+    for base in base_features:
+        if base not in used_features:
+            del features[base]
+
+    pixi["environments"] = envs
+    pixi["feature"] = features
+
+    with open(shared_manifest, "wb") as f:
+        tomli_w.dump(pixi, f)
+
+    if shared_envs_dir.exists():
+        for env_name in envs_to_remove:
+            env_path = shared_envs_dir / env_name
+            if env_path.exists():
+                if logger:
+                    logger.info(f"Removing shared environment directory: {env_path}")
+                try:
+                    shutil.rmtree(env_path)
+                except Exception as e:
+                    if logger:
+                        logger.error(f"Error removing shared environment directory {env_path}: {e}")
+            for env_dir in shared_envs_dir.iterdir():
+                if env_dir.is_dir() and env_dir.name not in envs:
+                    shutil.rmtree(env_dir)
 
 class MethodInstaller:
     def __init__(self, method_config: Dict, base_path: Path, verbose: bool = False):
@@ -53,12 +115,13 @@ class MethodInstaller:
                 self.logger.debug(f"Configuration generated at {toml_path}")
 
                 with self.logger.spinner(" Running Pixi Install "):
-                    subprocess.check_call(
+                    run_command_captured(
                         [str(self.pixi_exe), "install"],
                         cwd=env_path,
                         env=os.environ,
-                        stdout=None if self.verbose else subprocess.DEVNULL,
-                        stderr=None if self.verbose else subprocess.DEVNULL
+                        verbose=self.verbose,
+                        logger=self.logger,
+                        log_path=env_path / "install_output.log",
                     )
             
             self._clone_repositories()
@@ -134,7 +197,7 @@ class MethodInstaller:
         with open(manifest_path, "wb") as f:
             tomli_w.dump(pixi, f)
             
-        subprocess.check_call(
+        run_command_captured(
             [
                 str(self.pixi_exe),
                 "install",
@@ -145,8 +208,9 @@ class MethodInstaller:
             ],
             cwd=self.base_path,
             env=os.environ,
-            stdout=None if self.verbose else subprocess.DEVNULL,
-            stderr=None if self.verbose else subprocess.DEVNULL
+            verbose=self.verbose,
+            logger=self.logger,
+            log_path=shared_dir / "install_output.log",
         )
 
         meta = {"manifest_path": str(manifest_path), "env_name": env_name}
@@ -161,13 +225,14 @@ class MethodInstaller:
                 return tomli.load(f)
         else:
             pixi = {
-                "project": {
+                "workspace": {
                     "name": "gs_shared",
                     "version": "0.1.0",
                     "channels": self.config.get("installation", {}).get(
                         "channels", ["pytorch", "nvidia", "conda-forge"]
                     ),
                     "platforms": ["linux-64"],
+                    "conda-pypi-map": {},
                 },
                 "dependencies": {"python": "3.10.*", "pip": "*"},
                 "pypi-dependencies": {},
@@ -203,7 +268,10 @@ class MethodInstaller:
             "gcc_linux-64": f"{C_COMPILER_VERSION}.*",
             "make": "*",
             "cmake": "*",
-            "cuda-toolkit": f"{cuda_ver_raw}",
+            "git": "*",
+            "curl": "*",
+            "libssh2": "*",
+            "cuda-toolkit": f"{cuda_ver_raw}.*",
             # "cuda-toolkit-dev": f"{cuda_ver_raw}",
             "cuda-command-line-tools": f"{cuda_ver_raw}.*",
             "cuda-libraries": f"{cuda_ver_raw}.*",
@@ -285,13 +353,14 @@ class MethodInstaller:
 
         # Struttura Base Pixi
         pixi = {
-            "project": {
+            "workspace": {
                 "name": self.config.get("title", "module").replace(" ", "_").lower(),
                 "version": "0.1.0",
                 "channels": install_cfg.get(
                     "channels", ["pytorch", "nvidia", "conda-forge"]
                 ),
                 "platforms": ["linux-64"],
+                "conda-pypi-map": {},
             },
             "dependencies": {"python": self._format_ver(py_ver_raw), "pip": "*"},
             "pypi-dependencies": {},
@@ -315,12 +384,15 @@ class MethodInstaller:
                     "colmap": "*",
                     "make": "*",
                     "cmake": "*",
+                    "git": "*",
+                    "curl": "*",
+                    "libssh2": "*"
                 }
             )
 
         pixi["dependencies"].update(
             {
-                "cuda-toolkit": f"{cuda_ver_raw}",
+                "cuda-toolkit": f"{cuda_ver_raw}.*",
                 "cuda-command-line-tools": f"{cuda_ver_raw}.*",
                 "cuda-libraries": f"{cuda_ver_raw}.*",
                 "cuda-cudart": f"{cuda_ver_raw}.*",
@@ -389,6 +461,7 @@ class MethodInstaller:
                 branch = repo.get("branch", "main")
                 path_name = repo.get("path", url.split("/")[-1].replace(".git", ""))
                 recursive = repo.get("recursive", False)
+                shallow = repo.get("shallow", False)
 
                 target_path = self.vendor_dir / path_name
 
@@ -398,15 +471,26 @@ class MethodInstaller:
 
                 self.logger.debug(f"Cloning {url} ({branch}) -> {path_name}...")
                 cmd = ["git", "clone", "-b", branch, url, str(target_path)]
+                if shallow:
+                    cmd.append("--depth")
+                    cmd.append("1")
                 if recursive:
                     cmd.append("--recursive")
 
-                subprocess.check_call(
-                    cmd,
-                    stdout=None if self.verbose else subprocess.DEVNULL,
-                    stderr=None if self.verbose else subprocess.DEVNULL,
-                )
-            # return target_path
+                try:
+                    subprocess.run(
+                        cmd,
+                        stdout=None if self.verbose else subprocess.DEVNULL,
+                        stderr=None if self.verbose else subprocess.DEVNULL,
+                        timeout=CLONE_TIMEOUT_SECONDS,
+                        check=True,
+                    )
+                except subprocess.TimeoutExpired:
+                    if target_path.exists():
+                        shutil.rmtree(target_path, ignore_errors=True)
+                    raise RuntimeError(
+                        f"git clone of {url} timed out after {CLONE_TIMEOUT_SECONDS}s."
+                    )
 
     def _run_env_commands(self, commands: List[str], env_path: Path, manifest_path: Path | None = None, env_name: str | None = None):
         """Esegue comandi shell all'interno dell'ambiente Pixi."""
@@ -483,12 +567,13 @@ class MethodInstaller:
                     str(env_path / "pixi.toml"),
                 ] + args
             try:
-                subprocess.check_call(
+                run_command_captured(
                     full_cmd,
                     cwd=self.base_path,
                     env=custom_env,
-                    stdout=None if self.verbose else subprocess.DEVNULL,
-                    stderr=None if self.verbose else subprocess.DEVNULL,
+                    verbose=self.verbose,
+                    logger=self.logger,
+                    log_path=env_path / "build_output.log",
                 )
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Command failed: {cmd_str}")
@@ -500,7 +585,7 @@ class MethodInstaller:
         if self.config.get("installation", {}).get("shared_env", False):
             try:
                 method_id = self.config.get("__id__", env_path.name)
-                self._remove_shared_entries(method_id)
+                remove_shared_entries(self.base_path, method_id, self.logger)
             except Exception as e:
                 self.logger.error(f"Error during shared environment cleanup: {e}")
                 
@@ -525,59 +610,6 @@ class MethodInstaller:
             except Exception as e:
                 self.logger.error(f"Error removing environment directory {env_path}: {e}")
                     
-    def _remove_shared_entries(self, method_id: str):
-        shared_dir = self.base_path / ".envs" / "_shared"
-        shared_manifest = shared_dir / "pixi.toml"
-        shared_envs_dir = shared_dir / ".pixi" / "envs"
-        
-        if not shared_manifest.exists():
-            self.logger.debug(f"No shared manifest found at {shared_manifest}. Skipping shared cleanup.")
-            return
-        
-        with open(shared_manifest, "rb") as f:
-            pixi = tomli.load(f)
-            
-        tool_feature = f"tool-{method_id}"
-        envs = pixi.get("environments", {})
-        features = pixi.get("feature", {})
-        
-        envs_to_remove = [name for name, cfg in envs.items() if tool_feature in cfg.get("features", [])]
-        
-        for name in envs_to_remove:
-            if name in envs:
-                del envs[name]
-                
-        if tool_feature in features:
-            del features[tool_feature]
-            
-        used_features = set()
-        for cfg in envs.values():
-            used_features.update(cfg.get("features", []))
-            
-        base_features = [f for f in features.keys() if f.startswith("base-")]
-        for base in base_features:
-            if base not in used_features:
-                del features[base]
-                
-        pixi["environments"] = envs
-        pixi["feature"] = features
-        
-        with open(shared_manifest, "wb") as f:
-            tomli_w.dump(pixi, f)
-            
-        if shared_envs_dir.exists():
-            for env_name in envs_to_remove:
-                env_path = shared_envs_dir / env_name
-                if env_path.exists():
-                    self.logger.info(f"Removing shared environment directory: {env_path}")
-                    try:
-                        shutil.rmtree(env_path)
-                    except Exception as e:
-                        self.logger.error(f"Error removing shared environment directory {env_path}: {e}")
-                for env_dir in shared_envs_dir.iterdir():
-                    if env_dir.is_dir() and env_dir.name not in envs:
-                        shutil.rmtree(env_dir)
-            
     def _resolve_template(self, text: str) -> str:
         """Sostituisce placeholder {{...}} con path assoluti (slash normalizzati)."""
         vendor_str = str(self.vendor_dir).replace("\\", "/")

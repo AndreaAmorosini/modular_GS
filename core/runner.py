@@ -4,6 +4,7 @@ import re
 import json
 import shutil
 import struct
+import hashlib
 import cv2
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -13,19 +14,20 @@ from .post_processing import filter_ply_by_opacity
 from .utils import RichLogger
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 class PipelineRunner:
     def __init__(self, pipeline_config_path: str, overrides: Optional[Dict[str, Any]] = None, verbose: bool = False):
         self.pipeline_path = Path(pipeline_config_path).resolve()
         self.base_path = self.pipeline_path.parent.parent 
         self.envs_base_dir = self.base_path / ".envs"
-        self._tmp_run_dir = self.base_path / ".tmp"
+        self._tmp_run_dir = None
         self.logger = RichLogger(debug_enabled=verbose, verbose=verbose)
         self.verbose = verbose
         
         self.overrides = overrides or {}
         self.context = PipelineContext(self.base_path, overrides, verbose=verbose)
+        self._tmp_run_dir = self.context.get_output_dir() / ".tmp"
 
         with open(self.pipeline_path, "rb") as f:
             self.config = tomli.load(f)
@@ -44,41 +46,77 @@ class PipelineRunner:
         except Exception as e:
             self.logger.warning(f"Could not create temporary run directory: {e}")
             self._tmp_run_dir = None
+
+        success = False
         
         try:
             steps = self.config.get("steps", [])
-            for i, step in enumerate(steps):
-                method_rel_path = step.get("method")
-                
-                method_path = (self.base_path / method_rel_path).resolve()
-                if not method_path.exists():
-                    method_path = (self.base_path / "methods" / method_rel_path).resolve()
+            resolved_steps = self._validate_steps(steps)
+            self._prune_stale_steps([s for s, _ in resolved_steps])
 
-                env_path = self.envs_base_dir / method_path.stem
-                
-                manifest_path = env_path / "pixi.toml"
-                shared_meta = env_path / "shared_env.json"
-                if not manifest_path.exists() and not shared_meta.exists():
-                    self.logger.error(f"Errore: Ambiente {method_path.stem} non installato.")
-                    raise FileNotFoundError(f"Run 'python main.py methods install {method_path.stem}' first.")
-
-                
-            for i, step in enumerate(steps):
-                self._run_step(step, i)
+            for i, (step, method_path) in enumerate(resolved_steps):
+                self._run_step(step, i, method_path)
                 
             try:
                 self._augment_pipeline_status(start_time)
             except Exception as e:
                 self.logger.error(f"Error augmenting pipeline status: {e}")
+
+            success = True
+            
         finally:
-            if self._tmp_run_dir and self._tmp_run_dir.exists():
+            if success and self._tmp_run_dir and self._tmp_run_dir.exists():
                 try:
                     shutil.rmtree(self._tmp_run_dir)
                     self.logger.debug(f"Cleaned up temporary run directory at '{self._tmp_run_dir}'")
                 except Exception as e:
                     self.logger.warning(f"Could not clean up temporary run directory: {e}")
+            elif self._tmp_run_dir and self._tmp_run_dir.exists():
+                self.logger.warning(
+                    f"Pipeline failed or was interrupted. Preserving temporary run diretory for resume: '{self._tmp_run_dir}'"
+                )
+                    
 
-    def _run_step(self, step_config: Dict, index: int):
+    def _resolve_method_path(self, method_rel_path: str) -> Path:
+        """Resolve a method reference from a pipeline step to its TOML path."""
+        method_path = (self.base_path / method_rel_path).resolve()
+        if not method_path.exists():
+            method_path = (self.base_path / "methods" / method_rel_path).resolve()
+        return method_path
+
+    def _validate_steps(self, steps: list) -> list:
+        """Validate every step upfront (schema, TOML existence, installed env).
+        Returns a list of (step, method_path) pairs. Raises ValueError with all
+        the problems found before executing anything."""
+        errors = []
+        resolved = []
+        for i, step in enumerate(steps):
+            step_name = step.get("name", f"Step_{i}")
+            method_rel_path = step.get("method")
+            if not method_rel_path:
+                errors.append(f"Step '{step_name}' (index {i}): missing required 'method' field.")
+                continue
+
+            method_path = self._resolve_method_path(method_rel_path)
+            if not method_path.exists():
+                errors.append(f"Step '{step_name}' (index {i}): method TOML not found: '{method_rel_path}'.")
+                continue
+
+            env_path = self.envs_base_dir / method_path.stem
+            if not (env_path / "pixi.toml").exists() and not (env_path / "shared_env.json").exists():
+                errors.append(
+                    f"Step '{step_name}' (index {i}): environment '{method_path.stem}' is not installed. "
+                    f"Run 'python main.py methods install {method_path.stem}' first."
+                )
+                continue
+
+            resolved.append((step, method_path))
+
+        if errors:
+            raise ValueError("Pipeline configuration errors:\n  - " + "\n  - ".join(errors))
+        return resolved
+
+    def _run_step(self, step_config: Dict, index: int, method_path: Path):
         step_name = step_config.get("name", f"Step_{index}")
         
         #Check Skip Logic
@@ -88,13 +126,6 @@ class PipelineRunner:
             outputs = completed_steps[step_name]["outputs"]
         else:
             #Execution Logic
-            method_rel_path = step_config.get("method")
-            
-            method_path = (self.base_path / method_rel_path).resolve()
-            if not method_path.exists():
-                 # Fallback
-                 method_path = (self.base_path / "methods" / method_rel_path).resolve()
-
             self.logger.debug(f"\nOutput Step [{step_name}] ({method_path.stem})")
 
             with open(method_path, "rb") as f:
@@ -191,15 +222,8 @@ class PipelineRunner:
                     try:
                         filter_ply_by_opacity(str(target_ply), str(filtered_path), threshold=float(opacity_threshold), logger=self.logger)
                         
-                        updated_existing = False
-                        for key, val in outputs.items():
-                            if isinstance(val, (str, Path)):
-                                outputs[key] = filtered_path
-                                updated_existing = True
-                                
-                        if not updated_existing:
-                            outputs["filtered_ply"] = filtered_path
-                            
+                        self._register_filtered_outputs(outputs, filtered_path, target_ply)
+
                         if target_ply:
                             #Copy filtered_ply in output_dir
                             dest_path = self.context.get_output_dir() / "final_result" / "final_gaussian.ply"
@@ -224,7 +248,7 @@ class PipelineRunner:
                     self.logger.info(f"[Output] Copied final PLY to '{dest_path.name}'")
 
             # Save completion status
-            self._save_step_completion(step_name, outputs)
+            self._save_step_completion(step_name, outputs, step_config)
 
         # Output Registration in Context
         # Format "StepName_OutputName" (es. Extraction_images_dir)
@@ -245,6 +269,17 @@ class PipelineRunner:
              if val_to_save:
                  self.context.set(pipeline_mapping_key, val_to_save)
                  self.logger.debug(f"-> Context[{pipeline_mapping_key}] = {val_to_save}")
+
+    @staticmethod
+    def _register_filtered_outputs(outputs: Dict[str, Any], filtered_path: Path, target_ply: Path) -> None:
+        """Replace only the outputs pointing at the original PLY with the filtered one.
+        Unrelated outputs (e.g. model_dir) must keep their original value, otherwise
+        downstream steps receive the wrong path through the pipeline context."""
+        target_resolved = target_ply.resolve()
+        for key, val in outputs.items():
+            if isinstance(val, (str, Path)) and Path(val).resolve() == target_resolved:
+                outputs[key] = filtered_path
+        outputs.setdefault("filtered_ply", filtered_path)
 
     def _adapt_input_structure(self, inputs: Dict[str, Any]):
         """
@@ -320,6 +355,23 @@ class PipelineRunner:
         
         if not img_dir.exists() or not colmap_dir.exists():
             return
+        
+        # Only ever rewrite images inside the temporary run directory: when the
+        # input was not copied there, resizing would destroy the user's original
+        # files in inputs/.
+        if self._tmp_run_dir is None:
+            return
+        try:
+            img_dir_resolved = img_dir.resolve()
+            tmp_resolved = self._tmp_run_dir.resolve()
+        except OSError:
+            return
+        if not str(img_dir_resolved).startswith(str(tmp_resolved)):
+            self.logger.debug(
+                f"[Auto-Fix] Skipping resolution fix: '{img_dir}' is outside the temporary "
+                f"run directory and may contain original files."
+            )
+            return
 
         target_w, target_h = self._get_colmap_dims(colmap_dir)
         if not target_w or not target_h:
@@ -394,7 +446,67 @@ class PipelineRunner:
                 self.logger.error(f"[ERROR] Could not load status file: {e}")
         return {}
 
-    def _save_step_completion(self, step_name: str, outputs: Dict[str, Any]):
+    @staticmethod
+    def _step_signature(step_config: Dict) -> str:
+        """Deterministic hash of a step's raw TOML definition. Used to detect
+        pipelines edited between runs so that stale completed steps are not
+        silently skipped on resume."""
+        canonical = json.dumps(
+            {
+                "method": step_config.get("method"),
+                "inputs": step_config.get("inputs", {}),
+                "kwargs": step_config.get("kwargs", {}),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _prune_stale_steps(self, steps: list):
+        """Invalidate completed-step entries from the first step whose definition
+        changed (or is missing) onwards: downstream outputs may depend on the
+        files that step would regenerate."""
+        completed = self._load_completed_steps()
+        if not completed or not steps:
+            return
+
+        stale_from = None
+        for i, step in enumerate(steps):
+            name = step.get("name", f"Step_{i}")
+            entry = completed.get(name)
+            if entry is None:
+                stale_from = i
+                break
+            if entry.get("signature") != self._step_signature(step):
+                self.logger.warning(f"Step '{name}' changed since the last run: re-running from here.")
+                stale_from = i
+                break
+
+        if stale_from is None:
+            return
+
+        removed = []
+        for i, step in enumerate(steps):
+            if i < stale_from:
+                continue
+            name = step.get("name", f"Step_{i}")
+            if name in completed:
+                completed.pop(name)
+                removed.append(name)
+
+        if removed:
+            self.logger.warning(f"Invalidating completed steps: {', '.join(removed)}")
+            self._write_status(completed)
+
+    def _write_status(self, status: Dict[str, Any]):
+        status_file = self._get_status_file()
+        try:
+            with open(status_file, "w") as f:
+                json.dump(status, f, indent=4)
+        except Exception as e:
+            self.logger.error(f"[ERROR] Could not save status file: {e}")
+
+    def _save_step_completion(self, step_name: str, outputs: Dict[str, Any], step_config: Optional[Dict] = None):
         # Convert Path objects to strings for JSON serialization
         serializable_outputs = {}
         for k, v in outputs.items():
@@ -405,13 +517,10 @@ class PipelineRunner:
         
         status = self._load_completed_steps()
         status[step_name] = {"outputs": serializable_outputs}
+        if step_config is not None:
+            status[step_name]["signature"] = self._step_signature(step_config)
         
-        status_file = self._get_status_file()
-        try:
-            with open(status_file, "w") as f:
-                json.dump(status, f, indent=4)
-        except Exception as e:
-            self.logger.error(f"[ERROR] Could not save status file: {e}")
+        self._write_status(status)
             
     def _count_ply_vertices(self, ply_path: Path) -> int:
         """Count vertices in a PLY file (binary or ascii)."""
@@ -534,7 +643,7 @@ class PipelineRunner:
         summary = {
             "original_splats": int(original_count),
             "filtered_splats": int(filtered_count),
-            "end_time": datetime.utcnow().isoformat() + "Z",
+            "end_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "total_duration_s": round(time.time() - start_time, 2),
             "methods_used": methods_used,
             "overrides_applied": overrides_applied,

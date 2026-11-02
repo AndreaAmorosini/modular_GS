@@ -15,29 +15,46 @@
 
 ## Setup
 
-1. Install dependencies via Conda:
+The project environment is managed with [Pixi](https://pixi.prefix.dev/latest/) — the same tool used for the per-method environments — and defined in [`pixi.toml`](pixi.toml). Conda is **not** required.
+
+1. Install Pixi (or use the bundled one at `bin/pixi` if present):
    ```sh
-   conda env create -f environment.yml
+   curl -fsSL https://pixi.sh/install.sh | bash
    ```
 
-2. Activate the environment:
-    ```sh
-    conda activate modular_GS
-    ```
+2. Install the main environment (creates `.pixi/` and `pixi.lock`):
+   ```sh
+   pixi install
+   ```
+
+3. Run any command inside the environment with `pixi run` (no activation needed):
+   ```sh
+   pixi run python main.py --help
+   ```
+
+A locked `pixi.lock` is committed to the repository for reproducible installs. A `dev` environment with test-only extras (HTTP test client) is available via `pixi run -e dev python ...`.
 
 ## Main CLI Commands
 
-- `python main.py run <pipeline>` — runs a pipeline; overrides and context handling are orchestrated in [`main.run`](main.py) and [`core/runner.py`](core/runner.py).
-- `python main.py methods install <method>` — installs a tool via [`MethodInstaller.install`](core/installer.py).
-- `python main.py methods validate [--all] <method>` — validates installed tools through [`core.validation.Validator.validate_method`](core/validation.py).
-- `python main.py methods uninstall <method|--all>` — removes environments; logic lives in [`main.uninstall_method`](main.py).
-- `python main.py methods list` — lists available methods from [`core.validation.Validator.registry`](core/validation.py) along with installation state.
-- `python main.py methods help <method>` — prints help/overridable args by running the method’s validation command (see [`main.list_arguments`](main.py)).
+Prefix every command with `pixi run` (or activate the environment with `pixi shell`):
+
+- `pixi run python main.py run <pipeline>` — runs a pipeline; overrides and context handling are orchestrated in [`main.run`](main.py) and [`core/runner.py`](core/runner.py).
+- `pixi run python main.py methods install <method>` — installs a tool via [`MethodInstaller.install`](core/installer.py).
+- `pixi run python main.py methods validate [--all] <method>` — validates installed tools through [`core.validation.Validator.validate_method`](core/validation.py).
+- `pixi run python main.py methods uninstall <method|--all>` — removes environments; logic lives in [`main.uninstall_method`](main.py).
+- `pixi run python main.py methods list` — lists available methods from [`core.validation.Validator.registry`](core/validation.py) along with installation state.
+- `pixi run python main.py methods help <method>` — prints help/overridable args by running the method's validation command (see [`main.list_arguments`](main.py)).
 
 
 ## Web GUI
 
-Launch the Streamlit GUI with `python main.py web`. It boots [`core/gui/web_ui.py`](core/gui/web_ui.py), renders the sidebar, and exposes the Manage Methods, Pipeline Manager, Inputs, and Outputs pages. Each page (e.g., [`core/gui/pages/1_manage_tools.py`](core/gui/pages/1_manage_tools.py)) hooks into the same validator/installer stack and reuses [`core/utils.SignatureVerifier`](core/utils.py) for security.
+Launch the web interface with `pixi run python main.py web` (or `pixi run web`; default `http://127.0.0.1:8501`, configurable via `--host` and `--port`). It is a FastAPI backend ([`core/gui/server.py`](core/gui/server.py)) serving a vanilla JS frontend ([`core/gui/static/`](core/gui/static/)) — no build step required.
+
+Pages: Run Pipeline, Manage Methods, Pipeline Manager, Inputs, and Outputs. Long-running operations (pipeline runs, installs, validations) are executed as background jobs by [`core/jobs.py`](core/jobs.py) and stream their logs live to the browser over WebSocket, surviving page reloads and browser disconnects.
+
+The Outputs page includes two integrated viewers (all dependencies vendored under [`core/gui/static/vendor/`](core/gui/static/vendor/), no CDN or build step): a **splat viewer** based on [gsplat.js](https://github.com/dylanebert/gsplat.js) that renders the gaussian splat PLYs of a run in the browser, with a toggle between final/filtered/original variants when available, and a **sparse SfM viewer** that renders the COLMAP `points3D.ply` point cloud. For editing, runs can still be opened in the external [Supersplat editor](https://superspl.at/editor).
+
+Each page hooks into the same validator/installer stack as the CLI and reuses [`core/utils.SignatureVerifier`](core/utils.py) for security. The server binds to `127.0.0.1` by default; do not expose it on an untrusted network.
 
 
 ## Creating a New Method
@@ -59,7 +76,7 @@ By keeping signatures in sync, every accepted method is trusted before tooling l
 ## Acknowledgments
 
 We would like to thank the authors and creators of the following tools and libraries that made this project possible:
-- [Streamlit](https://streamlit.io/) for the web UI.
+- [FastAPI](https://fastapi.tiangolo.com/) and [Uvicorn](https://www.uvicorn.org/) for the web UI backend.
 - [Pixi](https://pixi.prefix.dev/latest/) for environment creation and execution orchestration.
 - [PyColmap](https://colmap.github.io/pycolmap/index.html) for reconstruction and matching helpers.
 - [Jinja2](https://jinja.palletsprojects.com/en/stable/) for command templating.

@@ -1,0 +1,33 @@
+title = "LIDAR to FastGS"
+description = "Usa una ricostruzione COLMAP già esistente da SplatKing/iPhone LiDAR e allena FastGS."
+
+[global_options]
+filter_opacity_threshold = 0.15
+
+[[steps]]
+name = "Training"
+method = "methods/splat/fastgs.toml"
+
+[steps.inputs]
+source_path = "{{context.input_file}}"
+
+[steps.kwargs]
+iterations = 30000
+
+max_init_points = 150000
+resolution = 4
+mult = 0.25
+densify_from_iter = 1000
+densify_until_iter = 8000
+densification_interval = 300
+
+densify_grad_threshold = 0.0002
+grad_abs_thresh = 0.0012
+grad_thresh = 0.0002
+opacity_reset_interval = 3000
+lambda_dsssim = 0.2
+dense = 0.001
+position_lr_final = 0.0000016
+shfeature_lr = 0.005
+feature_lr = 0.0025
+loss_thresh = 0.1

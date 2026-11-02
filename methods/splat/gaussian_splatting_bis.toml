@@ -1,0 +1,93 @@
+title = "Gaussian Splatting"
+description = "Allenamento del reference implementation di 3D Gaussian Splatting a partire da output SfM/COLMAP."
+url = "https://github.com/graphdeco-inria/gaussian-splatting"
+type = "gaussian_splatting"
+
+[environment]
+python_version = "3.7.13"
+# Il repo pina cudatoolkit=11.6 in environment.yml; il README cita CUDA SDK 11.8 come setup usato dagli autori.
+cuda = "11.6"
+PYTHONNOUSERSITE = "1"
+torch_version = "1.12.1"
+torchvision_version = "0.13.1"
+
+[installation]
+# Estensioni CUDA locali e versioni torch/cuda molto specifiche: meglio evitare ambienti condivisi.
+shared_env = false
+channels = ["pytorch", "nvidia", "conda-forge", "defaults"]
+dependencies = [
+  "python=3.7.13",
+  "pip=22.3.1",
+  "pytorch=1.12.1",
+  "torchvision=0.13.1",
+  "torchaudio=0.12.1",
+  "cudatoolkit=11.6",
+  "plyfile",
+  "tqdm",
+]
+pip_dependencies = [
+  "opencv-python",
+  "joblib",
+]
+build_commands = [
+  "cd {{method_vendor_dir}}/gaussian-splatting && python -m pip install ./submodules/diff-gaussian-rasterization",
+  "cd {{method_vendor_dir}}/gaussian-splatting && python -m pip install ./submodules/simple-knn",
+  "cd {{method_vendor_dir}}/gaussian-splatting && python -m pip install ./submodules/fused-ssim",
+]
+
+[[installation.git_repos]]
+url = "https://github.com/graphdeco-inria/gaussian-splatting"
+branch = "main"
+path = "gaussian-splatting"
+recursive = true
+
+[validation]
+validation_command = "cd {{method_vendor_dir}}/gaussian-splatting && python train.py --help"
+
+[execution]
+command = '''
+cd {{method_vendor_dir}}/gaussian-splatting
+python - <<'PY'
+import os
+import shutil
+
+scene_root = os.path.join("{{step_output_dir}}", "source_scene")
+images_src = os.path.abspath("{{inputs.expected_input_images_folder}}")
+colmap_src = os.path.abspath("{{inputs.expected_colmap_folder}}")
+
+# Assunzione: expected_colmap_folder punta al contenuto di sparse/0.
+if os.path.exists(scene_root):
+    shutil.rmtree(scene_root)
+
+os.makedirs(os.path.join(scene_root, "sparse"), exist_ok=True)
+
+images_dst = os.path.join(scene_root, "images")
+colmap_dst = os.path.join(scene_root, "sparse", "0")
+
+try:
+    os.symlink(images_src, images_dst, target_is_directory=True)
+except Exception:
+    shutil.copytree(images_src, images_dst)
+
+shutil.copytree(colmap_src, colmap_dst)
+print(f"Prepared COLMAP scene at: {scene_root}")
+PY
+
+python train.py \
+  -s "{{step_output_dir}}/source_scene" \
+  -m "{{outputs.trained_model_dir}}" \
+  --disable_viewer \
+  --quiet
+'''
+
+[execution.inputs]
+# Folder con immagini undistorte corrispondente a <scene>/images.
+expected_input_images_folder = "{{inputs.expected_input_images_folder}}"
+# Folder COLMAP corrispondente a <scene>/sparse/0 con cameras.bin/images.bin/points3D.bin oppure .txt.
+expected_colmap_folder = "{{inputs.expected_colmap_folder}}"
+
+[execution.help]
+help_command = "cd {{method_vendor_dir}}/gaussian-splatting && python train.py --help"
+
+[execution.outputs]
+trained_model_dir = "{{step_output_dir}}/trained_model"
